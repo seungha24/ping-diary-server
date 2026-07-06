@@ -48,6 +48,35 @@ router.get('/:id', requireAuth, async (req, res) => {
   res.json(data);
 });
 
+// PATCH /entries/:id — 일기 수정 (본인 것만)
+router.patch('/:id', requireAuth, async (req, res) => {
+  const { data: entry } = await req.supabase
+    .from('diary_entries')
+    .select('user_id')
+    .eq('id', req.params.id)
+    .single();
+
+  if (!entry) return res.status(404).json({ error: '일기를 찾을 수 없습니다' });
+  if (entry.user_id !== req.user.id) return res.status(403).json({ error: '본인의 일기만 수정할 수 있습니다' });
+
+  // 허용된 필드만 반영
+  const allowed = ['content', 'visibility', 'photo_url', 'title', 'tags', 'dates', 'persona', 'folder'];
+  const patch = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) patch[key] = req.body[key];
+  }
+
+  const { data, error } = await req.supabase
+    .from('diary_entries')
+    .update(patch)
+    .eq('id', req.params.id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 // DELETE /entries/:id — 일기 삭제
 router.delete('/:id', requireAuth, async (req, res) => {
   const { data: entry } = await req.supabase
