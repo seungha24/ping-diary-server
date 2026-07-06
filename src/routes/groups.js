@@ -1,10 +1,48 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
+
+// RLS를 우회해 그룹 전체 멤버를 집계하기 위한 관리자 클라이언트
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 function randomCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
+
+// GET /groups — 내가 속한 그룹 목록 (멤버 수 포함)
+router.get('/', requireAuth, async (req, res) => {
+  const { data: memberships } = await req.supabase
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', req.user.id);
+
+  const ids = (memberships || []).map((m) => m.group_id);
+  if (!ids.length) return res.json([]);
+
+  const { data: groups, error } = await req.supabase
+    .from('groups')
+    .select('*')
+    .in('id', ids)
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // 각 그룹의 멤버 수 계산 (RLS 우회 위해 관리자 클라이언트 사용)
+  const result = [];
+  for (const g of groups) {
+    const { count } = await supabaseAdmin
+      .from('group_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('group_id', g.id);
+    result.push({ ...g, member_count: count ?? 1 });
+  }
+  res.json(result);
+});
 
 // POST /groups — 그룹 생성
 router.post('/', requireAuth, async (req, res) => {
@@ -59,15 +97,15 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
 
   if (!membership) return res.status(403).json({ error: '그룹 멤버만 조회할 수 있습니다' });
 
-  // 멤버들의 friends 공개 일기 조회
-  const { data: members } = await req.supabase
+  // 멤버들의 friends 공개 일기 조회 (전체 멤버 조회는 RLS 우회 위해 관리자 클라이언트 사용)
+  const { data: members } = await supabaseAdmin
     .from('group_members')
     .select('user_id')
     .eq('group_id', req.params.id);
 
   const memberIds = members.map(m => m.user_id);
 
-  const { data, error } = await req.supabase
+  const { data, error } = await supabaseAdmin
     .from('diary_entries')
     .select('id, user_id, content, photo_url, created_at')
     .in('user_id', memberIds)

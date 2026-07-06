@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
+const { generateComment } = require('../aiComment');
 
 // GET /entries — 내 일기 목록
 router.get('/', requireAuth, async (req, res) => {
@@ -46,6 +47,33 @@ router.get('/:id', requireAuth, async (req, res) => {
 
   if (error || !data) return res.status(404).json({ error: '일기를 찾을 수 없습니다' });
   res.json(data);
+});
+
+// POST /entries/:id/comment — AI 코멘트 즉시 생성 (본인 것만, 데모/미리보기용)
+router.post('/:id/comment', requireAuth, async (req, res) => {
+  const { data: entry } = await req.supabase
+    .from('diary_entries')
+    .select('*')
+    .eq('id', req.params.id)
+    .single();
+
+  if (!entry) return res.status(404).json({ error: '일기를 찾을 수 없습니다' });
+  if (entry.user_id !== req.user.id) return res.status(403).json({ error: '본인의 일기만 가능합니다' });
+
+  try {
+    const aiComment = await generateComment(entry.content, entry.persona);
+    const { data, error } = await req.supabase
+      .from('diary_entries')
+      .update({ ai_comment: aiComment })
+      .eq('id', entry.id)
+      .select()
+      .single();
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'AI 코멘트 생성 실패: ' + e.message });
+  }
 });
 
 // PATCH /entries/:id — 일기 수정 (본인 것만)
