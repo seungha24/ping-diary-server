@@ -113,7 +113,29 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
     .order('created_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+
+  // 작성자 표시용: user_id → 이메일 앞부분 매핑
+  const authorMap = {};
+  for (const uid of memberIds) {
+    try {
+      const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
+      if (u?.user?.email) authorMap[uid] = u.user.email.split('@')[0];
+    } catch (_) {}
+  }
+  const enriched = (data || []).map((e) => ({ ...e, author: authorMap[e.user_id] || '멤버' }));
+  res.json(enriched);
+});
+
+// POST /groups/:id/leave — 그룹 나가기 (본인 멤버십만 삭제, RLS 우회)
+router.post('/:id/leave', requireAuth, async (req, res) => {
+  const { error } = await supabaseAdmin
+    .from('group_members')
+    .delete()
+    .eq('group_id', req.params.id)
+    .eq('user_id', req.user.id);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(204).send();
 });
 
 module.exports = router;
