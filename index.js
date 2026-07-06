@@ -12,5 +12,7 @@ app.use('/auth', require('./src/routes/auth'));
 app.use('/entries', require('./src/routes/entries'));
 app.use('/groups', require('./src/routes/groups'));
 
+require('./src/scheduler');
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`서버 실행 중: http://localhost:${PORT}`));

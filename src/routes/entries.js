@@ -26,9 +26,8 @@ router.post('/', requireAuth, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // AI 코멘트 비동기 생성 (응답은 먼저 보냄)
+  // AI 코멘트는 24시간 후 스케줄러가 생성
   res.status(201).json(data);
-  generateAiComment(data.id, content, req.supabase);
 });
 
 // GET /entries/:id — 단건 조회 (AI 코멘트 polling용)
@@ -57,28 +56,5 @@ router.delete('/:id', requireAuth, async (req, res) => {
   await req.supabase.from('diary_entries').delete().eq('id', req.params.id);
   res.status(204).send();
 });
-
-async function generateAiComment(entryId, content, supabase) {
-  try {
-    const OpenAI = require('openai');
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: '너는 사용자의 일기를 읽는 다정한 친구야. 2~3문장, 반말, 공감 위주로 답해줘. 훈수 두지 말고, 판단하지 말 것. 코멘트 내용만 출력해.',
-        },
-        { role: 'user', content },
-      ],
-    });
-
-    const aiComment = completion.choices[0].message.content;
-    await supabase.from('diary_entries').update({ ai_comment: aiComment }).eq('id', entryId);
-  } catch (e) {
-    console.error('AI 코멘트 생성 실패:', e.message);
-  }
-}
 
 module.exports = router;
