@@ -15,12 +15,18 @@ router.get('/', requireAuth, async (req, res) => {
 
 // POST /entries — 일기 작성
 router.post('/', requireAuth, async (req, res) => {
-  const { content, visibility = 'private', photo_url = null } = req.body;
+  const {
+    content, visibility = 'private', photo_url = null,
+    title = '', tags = [], dates = [], persona = '', folder = '',
+  } = req.body;
   if (!content) return res.status(400).json({ error: 'content는 필수입니다' });
 
   const { data, error } = await req.supabase
     .from('diary_entries')
-    .insert({ user_id: req.user.id, content, visibility, photo_url })
+    .insert({
+      user_id: req.user.id, content, visibility, photo_url,
+      title, tags, dates, persona, folder,
+    })
     .select()
     .single();
 
