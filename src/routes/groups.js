@@ -107,7 +107,7 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('diary_entries')
-    .select('id, user_id, content, photo_url, created_at')
+    .select('id, user_id, content, photo_url, created_at, title, tags, dates, persona, ai_comment')
     .in('user_id', memberIds)
     .eq('visibility', 'friends')
     .order('created_at', { ascending: false });
