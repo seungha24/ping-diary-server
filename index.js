@@ -11,6 +11,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/auth', require('./src/routes/auth'));
 app.use('/entries', require('./src/routes/entries'));
 app.use('/groups', require('./src/routes/groups'));
+app.use('/upload', require('./src/routes/upload'));
 
 require('./src/scheduler');
 
