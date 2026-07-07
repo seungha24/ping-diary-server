@@ -46,8 +46,8 @@ router.post('/password', requireAuth, async (req, res) => {
     return res.status(400).json({ error: '비밀번호는 6자 이상이어야 합니다' });
   }
 
-  // req.supabase는 해당 유저 토큰으로 동작하므로 본인 비밀번호만 바뀜
-  const { error } = await req.supabase.auth.updateUser({ password });
+  // admin으로 본인 계정(req.user.id) 비밀번호만 변경 (user-scoped 클라이언트는 세션이 없어 updateUser 불가)
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, { password });
   if (error) return res.status(400).json({ error: error.message });
 
   res.json({ ok: true });
