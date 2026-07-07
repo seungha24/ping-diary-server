@@ -1,18 +1,7 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
+const app = require('./src/app');
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
-app.use('/auth', require('./src/routes/auth'));
-app.use('/entries', require('./src/routes/entries'));
-app.use('/groups', require('./src/routes/groups'));
-app.use('/upload', require('./src/routes/upload'));
-
+// 예약 발송 스케줄러 시작
 require('./src/scheduler');
 
 const PORT = process.env.PORT || 3001;
