@@ -79,6 +79,50 @@ router.delete('/account', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /auth/me — 내 프로필 (folder_covers 등 user_metadata)
+router.get('/me', requireAuth, async (req, res) => {
+  const { data, error } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  if (error) return res.status(500).json({ error: error.message });
+  const meta = data.user?.user_metadata || {};
+  res.json({
+    email: data.user?.email || null,
+    folder_covers: meta.folder_covers || {},
+    theme: meta.theme || null,
+  });
+});
+
+// PATCH /auth/theme — 선택한 테마를 user_metadata에 저장
+router.patch('/theme', requireAuth, async (req, res) => {
+  const { theme } = req.body;
+  if (!theme) return res.status(400).json({ error: 'theme은 필수입니다' });
+
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, theme },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ theme });
+});
+
+// PATCH /auth/folder-covers — 폴더 커버 사진 저장 (user_metadata에 병합)
+router.patch('/folder-covers', requireAuth, async (req, res) => {
+  const { folder_id, photo_url } = req.body;
+  if (!folder_id) return res.status(400).json({ error: 'folder_id는 필수입니다' });
+
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const covers = { ...(meta.folder_covers || {}) };
+  if (photo_url) covers[folder_id] = photo_url;
+  else delete covers[folder_id];
+
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, folder_covers: covers },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ folder_covers: covers });
+});
+
 // GET /auth/kakao/start — 카카오 인가 페이지로 리디렉트 (닉네임만 요청)
 router.get('/kakao/start', (req, res) => {
   const ret = typeof req.query.return === 'string' ? req.query.return : APP_URL_DEFAULT;

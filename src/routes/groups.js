@@ -126,6 +126,29 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
   res.json(enriched);
 });
 
+// PATCH /groups/:id/photo — 그룹 커버 사진 변경 (멤버만, 전체 멤버 공유)
+router.patch('/:id/photo', requireAuth, async (req, res) => {
+  const { photo_url } = req.body;
+
+  // 멤버 확인
+  const { data: membership } = await req.supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', req.params.id)
+    .eq('user_id', req.user.id)
+    .single();
+  if (!membership) return res.status(403).json({ error: '그룹 멤버만 변경할 수 있습니다' });
+
+  const { data, error } = await supabaseAdmin
+    .from('groups')
+    .update({ photo_url: photo_url || null })
+    .eq('id', req.params.id)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 // POST /groups/:id/leave — 그룹 나가기 (본인 멤버십만 삭제, RLS 우회)
 router.post('/:id/leave', requireAuth, async (req, res) => {
   const { error } = await supabaseAdmin
