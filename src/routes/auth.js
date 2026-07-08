@@ -89,9 +89,24 @@ router.get('/me', requireAuth, async (req, res) => {
     folder_covers: meta.folder_covers || {},
     theme: meta.theme || null,
     folders: meta.folders || [],
+    hidden_folders: meta.hidden_folders || [],
     display_name: meta.display_name || null,
     username: meta.username || null,
   });
+});
+
+// PATCH /auth/hidden-folders — 숨긴(삭제한) 기본 폴더 id 목록 저장
+router.patch('/hidden-folders', requireAuth, async (req, res) => {
+  const { hidden } = req.body;
+  if (!Array.isArray(hidden)) return res.status(400).json({ error: 'hidden 배열이 필요합니다' });
+  const clean = hidden.slice(0, 50).map((s) => String(s).slice(0, 40)).filter(Boolean);
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, hidden_folders: clean },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ hidden_folders: clean });
 });
 
 // PATCH /auth/profile — 표시 이름/아이디 저장 (user_metadata)
