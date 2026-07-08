@@ -88,7 +88,28 @@ router.get('/me', requireAuth, async (req, res) => {
     email: data.user?.email || null,
     folder_covers: meta.folder_covers || {},
     theme: meta.theme || null,
+    folders: meta.folders || [],
   });
+});
+
+// PATCH /auth/folders — 사용자가 만든 폴더 목록 저장 (user_metadata)
+router.patch('/folders', requireAuth, async (req, res) => {
+  const { folders } = req.body;
+  if (!Array.isArray(folders)) return res.status(400).json({ error: 'folders 배열이 필요합니다' });
+
+  const clean = folders.slice(0, 50).map((f) => ({
+    id: String(f.id || '').slice(0, 40),
+    name: String(f.name || '').slice(0, 30),
+    emoji: String(f.emoji || '📁').slice(0, 8),
+  })).filter((f) => f.id && f.name);
+
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, folders: clean },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ folders: clean });
 });
 
 // PATCH /auth/theme — 선택한 테마를 user_metadata에 저장
