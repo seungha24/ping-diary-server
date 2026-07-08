@@ -12,7 +12,7 @@ async function generatePendingComments() {
 
   const { data: entries, error } = await supabaseAdmin
     .from('diary_entries')
-    .select('id, content, persona')
+    .select('id, content, persona, title, tags')
     .is('ai_comment', null)
     .lt('created_at', yesterday);
 
@@ -22,7 +22,7 @@ async function generatePendingComments() {
 
   for (const entry of entries) {
     try {
-      const aiComment = await generateComment(entry.content, entry.persona);
+      const aiComment = await generateComment(entry.content, entry.persona, { title: entry.title, tags: entry.tags });
       await supabaseAdmin
         .from('diary_entries')
         .update({ ai_comment: aiComment })

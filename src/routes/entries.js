@@ -61,7 +61,7 @@ router.post('/:id/comment', requireAuth, async (req, res) => {
   if (entry.user_id !== req.user.id) return res.status(403).json({ error: '본인의 일기만 가능합니다' });
 
   try {
-    const aiComment = await generateComment(entry.content, entry.persona);
+    const aiComment = await generateComment(entry.content, entry.persona, { title: entry.title, tags: entry.tags });
     const { data, error } = await req.supabase
       .from('diary_entries')
       .update({ ai_comment: aiComment })
