@@ -33,15 +33,26 @@ const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID || 'CF9zPOtTy5G9j7jwjw0Z';
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || 'ru3y_Pye5F';
 const NAVER_REDIRECT_URI = `${SERVER_URL}/auth/naver/callback`;
 
+// Supabase 인증 에러 메시지를 한국어로 변환
+function koAuthError(msg) {
+  const m = String(msg || '');
+  if (/at least 6 characters/i.test(m)) return '비밀번호는 6자 이상이어야 해요.';
+  if (/already registered|already been registered/i.test(m)) return '이미 가입된 이메일이에요. 로그인해 주세요.';
+  if (/invalid.*email|email.*invalid|unable to validate email/i.test(m)) return '이메일 형식이 올바르지 않아요.';
+  if (/Email not confirmed/i.test(m)) return '이메일 인증이 필요해요.';
+  if (/rate limit|too many requests|for security purposes/i.test(m)) return '요청이 많아요. 잠시 후 다시 시도해 주세요.';
+  return m;
+}
+
 // POST /auth/signup
 router.post('/signup', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: '이메일과 비밀번호는 필수입니다' });
+    return res.status(400).json({ error: '이메일과 비밀번호를 입력해 주세요.' });
   }
 
   const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return res.status(400).json({ error: koAuthError(error.message) });
 
   res.status(201).json({ user: { id: data.user.id, email: data.user.email } });
 });
