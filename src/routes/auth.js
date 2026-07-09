@@ -269,6 +269,16 @@ router.get('/kakao/callback', async (req, res) => {
   }
 });
 
+// GET /auth/naver/diag — 네이버 secret 주입 여부 진단 (값 노출 안 함, 임시)
+router.get('/naver/diag', (_req, res) => {
+  res.json({
+    client_id_tail: NAVER_CLIENT_ID.slice(-4),
+    naver_secret_set: !!NAVER_CLIENT_SECRET,
+    naver_secret_len: NAVER_CLIENT_SECRET.length,
+    redirect_uri: NAVER_REDIRECT_URI,
+  });
+});
+
 // GET /auth/naver/start — 네이버 인가 페이지로 리디렉트
 router.get('/naver/start', (req, res) => {
   const ret = typeof req.query.return === 'string' ? req.query.return : APP_URL_DEFAULT;
