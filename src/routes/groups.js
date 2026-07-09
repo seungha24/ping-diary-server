@@ -170,6 +170,31 @@ router.post('/:id/leave', requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
+// PATCH /groups/:id — 그룹 이름 수정 (멤버만)
+router.patch('/:id', requireAuth, async (req, res) => {
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  if (!name) return res.status(400).json({ error: '그룹 이름은 필수입니다' });
+
+  const { data: membership } = await supabaseAdmin
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', req.params.id)
+    .eq('user_id', req.user.id)
+    .maybeSingle();
+
+  if (!membership) return res.status(403).json({ error: '이 그룹의 멤버만 수정할 수 있습니다' });
+
+  const { data, error } = await supabaseAdmin
+    .from('groups')
+    .update({ name })
+    .eq('id', req.params.id)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 // DELETE /groups/:id — 그룹 삭제 (멤버만 가능). 멤버 전원 제거 후 그룹 삭제.
 router.delete('/:id', requireAuth, async (req, res) => {
   // 요청자가 이 그룹의 멤버인지 확인
