@@ -275,6 +275,7 @@ router.get('/naver/diag', (_req, res) => {
     client_id_tail: NAVER_CLIENT_ID.slice(-4),
     naver_secret_set: !!NAVER_CLIENT_SECRET,
     naver_secret_len: NAVER_CLIENT_SECRET.length,
+    naver_env_raw: !!process.env.NAVER_CLIENT_SECRET,
     redirect_uri: NAVER_REDIRECT_URI,
   });
 });
