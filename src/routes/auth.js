@@ -16,7 +16,8 @@ const supabaseAdmin = createClient(
 // 카카오 비즈니스 앱 전환이 있어야 받을 수 있다. 그래서 닉네임(profile_nickname)만
 // 요청하는 OAuth를 직접 구현해 Supabase 세션을 발급한다.
 const KAKAO_REST_KEY = process.env.KAKAO_REST_KEY || 'dda0e9624bcabd9b2bacdd9f9109878f';
-const KAKAO_CLIENT_SECRET = process.env.KAKAO_CLIENT_SECRET || ''; // 카카오에서 Client Secret '사용함'일 때만 필요
+// 카카오에서 Client Secret '사용함'일 때 필요 (Railway 환경변수 KAKAO_CLIENT_SECRET)
+const KAKAO_CLIENT_SECRET = process.env.KAKAO_CLIENT_SECRET || '';
 const SERVER_URL = process.env.SERVER_URL || 'https://ping-diary-server-production.up.railway.app';
 const KAKAO_REDIRECT_URI = `${SERVER_URL}/auth/kakao/callback`;
 const APP_URL_DEFAULT = process.env.APP_URL || 'https://ping-diary.vercel.app';
