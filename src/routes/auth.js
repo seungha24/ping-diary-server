@@ -119,9 +119,24 @@ router.get('/me', requireAuth, async (req, res) => {
     theme: meta.theme || null,
     folders: meta.folders || [],
     hidden_folders: meta.hidden_folders || [],
+    blocked_users: meta.blocked_users || [],
     display_name: meta.display_name || null,
     username: meta.username || null,
   });
+});
+
+// PATCH /auth/blocked-users — 차단한 사용자 id 목록 저장 (신고/차단 기능)
+router.patch('/blocked-users', requireAuth, async (req, res) => {
+  const { blocked } = req.body;
+  if (!Array.isArray(blocked)) return res.status(400).json({ error: 'blocked 배열이 필요합니다' });
+  const clean = blocked.slice(0, 200).map((s) => String(s).slice(0, 64)).filter(Boolean);
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, blocked_users: clean },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ blocked_users: clean });
 });
 
 // PATCH /auth/hidden-folders — 숨긴(삭제한) 기본 폴더 id 목록 저장

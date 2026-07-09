@@ -12,5 +12,6 @@ app.use('/auth', require('./routes/auth'));
 app.use('/entries', require('./routes/entries'));
 app.use('/groups', require('./routes/groups'));
 app.use('/upload', require('./routes/upload'));
+app.use('/reports', require('./routes/reports'));
 
 module.exports = app;

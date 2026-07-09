@@ -103,7 +103,15 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
     .select('user_id')
     .eq('group_id', req.params.id);
 
-  const memberIds = members.map(m => m.user_id);
+  // 내가 차단한 사용자 목록 → 그들의 글은 제외 (신고/차단 기능)
+  let blocked = [];
+  try {
+    const { data: me } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+    blocked = me?.user?.user_metadata?.blocked_users || [];
+  } catch (_) {}
+
+  const memberIds = members.map(m => m.user_id).filter((id) => !blocked.includes(id));
+  if (memberIds.length === 0) return res.json([]);
 
   const { data, error } = await supabaseAdmin
     .from('diary_entries')
@@ -114,12 +122,13 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // 작성자 표시용: user_id → 이메일 앞부분 매핑
+  // 작성자 표시용: user_id → 표시이름/닉네임(없으면 이메일 앞부분)
   const authorMap = {};
   for (const uid of memberIds) {
     try {
       const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
-      if (u?.user?.email) authorMap[uid] = u.user.email.split('@')[0];
+      const m = u?.user?.user_metadata || {};
+      authorMap[uid] = m.display_name || m.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버');
     } catch (_) {}
   }
   const enriched = (data || []).map((e) => ({ ...e, author: authorMap[e.user_id] || '멤버' }));
