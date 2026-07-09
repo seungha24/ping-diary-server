@@ -60,11 +60,16 @@ router.post('/:id/comment', requireAuth, async (req, res) => {
   if (!entry) return res.status(404).json({ error: '일기를 찾을 수 없습니다' });
   if (entry.user_id !== req.user.id) return res.status(403).json({ error: '본인의 일기만 가능합니다' });
 
+  // 본문에 persona가 오면 그 말투로 다시 생성하고, 바뀐 페르소나를 일기에도 저장한다.
+  const persona = typeof req.body.persona === 'string' && req.body.persona.trim()
+    ? req.body.persona.trim()
+    : entry.persona;
+
   try {
-    const aiComment = await generateComment(entry.content, entry.persona, { title: entry.title, tags: entry.tags });
+    const aiComment = await generateComment(entry.content, persona, { title: entry.title, tags: entry.tags });
     const { data, error } = await req.supabase
       .from('diary_entries')
-      .update({ ai_comment: aiComment })
+      .update({ ai_comment: aiComment, persona })
       .eq('id', entry.id)
       .select()
       .single();
