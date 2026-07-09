@@ -26,8 +26,9 @@ const APP_URL_DEFAULT = process.env.APP_URL || 'https://ping-diary.vercel.app';
 
 // ── 네이버 로그인 (커스텀 OAuth) ──────────────────────────────
 // 카카오와 동일하게 서버에서 네이버 OAuth를 처리해 Supabase 세션을 발급한다.
-// 네이버 개발자센터(developers.naver.com)에서 애플리케이션 등록 후 값 주입.
-const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID || '';
+// 네이버 개발자센터(developers.naver.com) 애플리케이션 값.
+// Client ID는 공개값이라 코드에 두고, Client Secret은 Railway 환경변수(NAVER_CLIENT_SECRET)로.
+const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID || 'CF9zPOtTy5G9j7jwjw0Z';
 const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || '';
 const NAVER_REDIRECT_URI = `${SERVER_URL}/auth/naver/callback`;
 
