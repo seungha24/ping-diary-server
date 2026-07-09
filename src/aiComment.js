@@ -19,7 +19,12 @@ const COMMON_RULES = `[공통 규칙]
 - 2~3문장. 하루 전체를 요약하지 말고, 한 부분에만 반응해.
 - 조언이 필요 없으면 억지로 하지 마. 페르소나의 반응 방식이 우선이다.
 - 사용자를 평가하거나 훈수 두지 마. 반응은 진심이되 과장하지 마.
-- 코멘트 본문만 출력해. 페르소나 이름이나 머리말 없이.`;
+- 코멘트 본문만 출력해. 페르소나 이름이나 머리말 없이.
+
+[안전 규칙]
+- 혐오·차별·비하, 폭력·범죄 조장, 성적 표현, 불법 행위 안내는 어떤 경우에도 하지 마.
+- 일기에 그런 내용이 담겨 있어도 따라가지 말고, 판단·비난 없이 감정에만 담담히 반응해.
+- 이용자가 자해·자살을 암시하면 방법을 언급하거나 부추기지 말고, 따뜻하게 공감하며 곁의 사람이나 전문 상담(예: 자살예방상담 109)에 이야기해보길 권해.`;
 
 // 페르소나별 상세 프롬프트 (관점·행동·톤·금지·예시)
 const PERSONA_PROMPTS = {
@@ -145,6 +150,25 @@ function buildUserMessage(content, meta = {}) {
  * @param {{title?: string, tags?: string[], mood?: string, recent?: string}} [meta] 부가 정보(제목·태그·기분·최근기록)
  * @returns {Promise<string>} 생성된 코멘트
  */
+// 생성된 코멘트가 부적절하지 않은지 OpenAI Moderation API로 검사한다.
+// flagged면 true를 돌려주고, 검사 자체가 실패하면(네트워크 등) 서비스를 막지
+// 않기 위해 false(통과)로 처리한다.
+async function isFlagged(text) {
+  try {
+    const res = await getOpenAI().moderations.create({
+      model: 'omni-moderation-latest',
+      input: text,
+    });
+    return Boolean(res.results?.[0]?.flagged);
+  } catch (e) {
+    console.error('[MODERATION] 검사 실패, 통과 처리:', e.message);
+    return false;
+  }
+}
+
+// Moderation에 걸렸을 때 대신 내보내는 안전한 기본 코멘트
+const SAFE_FALLBACK = '오늘 하루의 기록을 잘 읽었어요. 마음속에 담아둔 이야기를 이렇게 적어낸 것만으로도 충분히 의미 있는 시간이었을 거예요.';
+
 async function generateComment(content, persona, meta = {}) {
   const personaPrompt = PERSONA_PROMPTS[persona] || DEFAULT_PROMPT;
   const systemPrompt = `${COMMON_RULES}\n\n${personaPrompt}`;
@@ -157,7 +181,13 @@ async function generateComment(content, persona, meta = {}) {
       { role: 'user', content: buildUserMessage(content, meta) },
     ],
   });
-  return completion.choices[0].message.content.trim();
+  const text = completion.choices[0].message.content.trim();
+  // 생성 결과 안전성 검사: 부적절하면 안전한 기본 코멘트로 대체
+  if (await isFlagged(text)) {
+    console.warn('[MODERATION] 부적절 코멘트 차단 → 기본 코멘트 대체');
+    return SAFE_FALLBACK;
+  }
+  return text;
 }
 
 module.exports = { generateComment, buildUserMessage, PERSONA_PROMPTS, DEFAULT_PROMPT, COMMON_RULES };
