@@ -24,6 +24,13 @@ const SERVER_URL = process.env.SERVER_URL || 'https://ping-diary-server-producti
 const KAKAO_REDIRECT_URI = `${SERVER_URL}/auth/kakao/callback`;
 const APP_URL_DEFAULT = process.env.APP_URL || 'https://ping-diary.vercel.app';
 
+// ── 네이버 로그인 (커스텀 OAuth) ──────────────────────────────
+// 카카오와 동일하게 서버에서 네이버 OAuth를 처리해 Supabase 세션을 발급한다.
+// 네이버 개발자센터(developers.naver.com)에서 애플리케이션 등록 후 값 주입.
+const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID || '';
+const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || '';
+const NAVER_REDIRECT_URI = `${SERVER_URL}/auth/naver/callback`;
+
 // POST /auth/signup
 router.post('/signup', async (req, res) => {
   const { email, password } = req.body;
@@ -256,6 +263,81 @@ router.get('/kakao/callback', async (req, res) => {
     const at = encodeURIComponent(sess.session.access_token);
     const rt = encodeURIComponent(sess.session.refresh_token);
     return res.redirect(`${appUrl}#kakao_at=${at}&kakao_rt=${rt}`);
+  } catch (e) {
+    return fail('exception');
+  }
+});
+
+// GET /auth/naver/start — 네이버 인가 페이지로 리디렉트
+router.get('/naver/start', (req, res) => {
+  const ret = typeof req.query.return === 'string' ? req.query.return : APP_URL_DEFAULT;
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: NAVER_CLIENT_ID,
+    redirect_uri: NAVER_REDIRECT_URI,
+    state: ret, // 네이버는 state 필수 (CSRF). 반환 URL을 겸해 전달.
+  });
+  res.redirect(`https://nid.naver.com/oauth2.0/authorize?${params.toString()}`);
+});
+
+// GET /auth/naver/callback — 네이버 code → Supabase 세션 발급 후 앱으로 리디렉트
+router.get('/naver/callback', async (req, res) => {
+  const { code, state, error: naverErr } = req.query;
+  const appUrl =
+    typeof state === 'string' && /^https?:\/\//.test(state) ? state : APP_URL_DEFAULT;
+  const fail = (msg) => res.redirect(`${appUrl}?naver_error=${encodeURIComponent(msg)}`);
+
+  try {
+    if (naverErr) return fail(String(naverErr));
+    if (!code) return fail('no_code');
+
+    // 1) 인가 코드 → 네이버 액세스 토큰
+    const tokenParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: NAVER_CLIENT_ID,
+      client_secret: NAVER_CLIENT_SECRET,
+      code: String(code),
+      state: String(state || ''),
+    });
+    const tokRes = await fetch(`https://nid.naver.com/oauth2.0/token?${tokenParams.toString()}`, {
+      method: 'POST',
+    });
+    const tok = await tokRes.json();
+    if (!tok.access_token) return fail('token_' + (tok.error || tokRes.status));
+
+    // 2) 네이버 프로필
+    const meRes = await fetch('https://openapi.naver.com/v1/nid/me', {
+      headers: { Authorization: `Bearer ${tok.access_token}` },
+    });
+    const me = await meRes.json();
+    const prof = me.response;
+    if (!prof || !prof.id) return fail('no_profile');
+    const naverId = String(prof.id);
+    const nickname = prof.nickname || prof.name || '네이버사용자';
+
+    // 3) Supabase 사용자 확보 — 합성 이메일(네이버 id 해시로 유효성 보장) + 결정적 비밀번호
+    const emailLocal = crypto.createHash('sha256').update(`naver:${naverId}`).digest('hex').slice(0, 24);
+    const email = `naver_${emailLocal}@ping-diary.app`;
+    const password = crypto
+      .createHmac('sha256', process.env.SUPABASE_SERVICE_KEY || 'ping-naver-secret')
+      .update(`naver:${naverId}`)
+      .digest('hex');
+
+    await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { provider: 'naver', naver_id: naverId, nickname },
+    });
+
+    // 4) 결정적 비밀번호로 로그인해 세션 발급
+    const { data: sess, error: signErr } = await supabase.auth.signInWithPassword({ email, password });
+    if (signErr || !sess?.session) return fail('signin_failed');
+
+    // 5) 앱으로 토큰 전달 (해시 프래그먼트)
+    const at = encodeURIComponent(sess.session.access_token);
+    const rt = encodeURIComponent(sess.session.refresh_token);
+    return res.redirect(`${appUrl}#naver_at=${at}&naver_rt=${rt}`);
   } catch (e) {
     return fail('exception');
   }
