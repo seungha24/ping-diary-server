@@ -180,20 +180,6 @@ router.patch('/folder-covers', requireAuth, async (req, res) => {
   res.json({ folder_covers: covers });
 });
 
-// GET /auth/kakao/diag — client_secret 로드 여부 진단 (값은 노출하지 않음)
-router.get('/kakao/diag', (_req, res) => {
-  res.json({
-    rest_key_tail: KAKAO_REST_KEY.slice(-4),
-    secret_set: !!KAKAO_CLIENT_SECRET,
-    secret_len: KAKAO_CLIENT_SECRET.length,
-    supabase_url_set: !!process.env.SUPABASE_URL,
-    supabase_service_set: !!process.env.SUPABASE_SERVICE_KEY,
-    openai_set: !!process.env.OPENAI_API_KEY,
-    kakao_env_raw_set: !!process.env.KAKAO_CLIENT_SECRET,
-    redirect_uri: KAKAO_REDIRECT_URI,
-  });
-});
-
 // GET /auth/kakao/start — 카카오 인가 페이지로 리디렉트 (닉네임만 요청)
 router.get('/kakao/start', (req, res) => {
   const ret = typeof req.query.return === 'string' ? req.query.return : APP_URL_DEFAULT;
