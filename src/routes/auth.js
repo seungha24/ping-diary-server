@@ -65,7 +65,13 @@ router.post('/login', async (req, res) => {
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return res.status(401).json({ error: '이메일 또는 비밀번호가 틀렸습니다' });
+  if (error) {
+    // 실제 자격증명 오류만 "틀렸다"로, 그 외(미인증·요청제한 등)는 원인 표시
+    if (/invalid login credentials/i.test(error.message)) {
+      return res.status(401).json({ error: '이메일 또는 비밀번호가 틀렸어요.' });
+    }
+    return res.status(401).json({ error: koAuthError(error.message) });
+  }
 
   res.json({
     token: data.session.access_token,
