@@ -170,4 +170,24 @@ router.post('/:id/leave', requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
+// DELETE /groups/:id — 그룹 삭제 (멤버만 가능). 멤버 전원 제거 후 그룹 삭제.
+router.delete('/:id', requireAuth, async (req, res) => {
+  // 요청자가 이 그룹의 멤버인지 확인
+  const { data: membership } = await supabaseAdmin
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', req.params.id)
+    .eq('user_id', req.user.id)
+    .maybeSingle();
+
+  if (!membership) return res.status(403).json({ error: '이 그룹의 멤버만 삭제할 수 있습니다' });
+
+  // 멤버 관계 먼저 제거 후 그룹 삭제 (FK 제약 회피)
+  await supabaseAdmin.from('group_members').delete().eq('group_id', req.params.id);
+  const { error } = await supabaseAdmin.from('groups').delete().eq('id', req.params.id);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(204).send();
+});
+
 module.exports = router;
