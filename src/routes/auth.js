@@ -187,6 +187,7 @@ router.get('/kakao/diag', (_req, res) => {
     supabase_url_set: !!process.env.SUPABASE_URL,
     supabase_service_set: !!process.env.SUPABASE_SERVICE_KEY,
     openai_set: !!process.env.OPENAI_API_KEY,
+    kakao_env_raw_set: !!process.env.KAKAO_CLIENT_SECRET,
     redirect_uri: KAKAO_REDIRECT_URI,
   });
 });
