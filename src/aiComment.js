@@ -1,7 +1,16 @@
 const OpenAI = require('openai');
 require('dotenv').config();
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// OpenAI 클라이언트는 지연 초기화한다. 키가 없으면 서버 시작 시 죽지 않고,
+// 코멘트를 실제로 생성할 때만 에러를 낸다(로그인 등 다른 기능과 분리).
+let _openai = null;
+function getOpenAI() {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error('OPENAI_API_KEY가 설정되지 않았습니다');
+  }
+  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  return _openai;
+}
 
 // 모든 페르소나에 공통으로 적용되는 규칙
 const COMMON_RULES = `[공통 규칙]
@@ -139,7 +148,7 @@ function buildUserMessage(content, meta = {}) {
 async function generateComment(content, persona, meta = {}) {
   const personaPrompt = PERSONA_PROMPTS[persona] || DEFAULT_PROMPT;
   const systemPrompt = `${COMMON_RULES}\n\n${personaPrompt}`;
-  const completion = await openai.chat.completions.create({
+  const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.85,
     max_tokens: 320,
