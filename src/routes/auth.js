@@ -27,9 +27,10 @@ const APP_URL_DEFAULT = process.env.APP_URL || 'https://ping-diary.vercel.app';
 // ── 네이버 로그인 (커스텀 OAuth) ──────────────────────────────
 // 카카오와 동일하게 서버에서 네이버 OAuth를 처리해 Supabase 세션을 발급한다.
 // 네이버 개발자센터(developers.naver.com) 애플리케이션 값.
-// Client ID는 공개값이라 코드에 두고, Client Secret은 Railway 환경변수(NAVER_CLIENT_SECRET)로.
+// Railway가 이 secret 변수 주입을 거부해(카카오와 동일) 기본값으로 박아둔다.
+// env가 있으면 env 우선. 노출되면 네이버 콘솔에서 재발급.
 const NAVER_CLIENT_ID = process.env.NAVER_CLIENT_ID || 'CF9zPOtTy5G9j7jwjw0Z';
-const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || '';
+const NAVER_CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || 'ru3y_Pye5F';
 const NAVER_REDIRECT_URI = `${SERVER_URL}/auth/naver/callback`;
 
 // POST /auth/signup
@@ -267,17 +268,6 @@ router.get('/kakao/callback', async (req, res) => {
   } catch (e) {
     return fail('exception');
   }
-});
-
-// GET /auth/naver/diag — 네이버 secret 주입 여부 진단 (값 노출 안 함, 임시)
-router.get('/naver/diag', (_req, res) => {
-  res.json({
-    client_id_tail: NAVER_CLIENT_ID.slice(-4),
-    naver_secret_set: !!NAVER_CLIENT_SECRET,
-    naver_secret_len: NAVER_CLIENT_SECRET.length,
-    naver_env_raw: !!process.env.NAVER_CLIENT_SECRET,
-    redirect_uri: NAVER_REDIRECT_URI,
-  });
 });
 
 // GET /auth/naver/start — 네이버 인가 페이지로 리디렉트
