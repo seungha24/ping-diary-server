@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { generateComment, generateMonthlyReport } = require('../aiComment');
+const { generateComment, generateMonthlyReport, generateMonthlyAwards } = require('../aiComment');
 
 // GET /entries — 내 일기 목록
 router.get('/', requireAuth, async (req, res) => {
@@ -75,6 +75,40 @@ router.get('/report', requireAuth, async (req, res) => {
     res.json({ report, count: rows.length });
   } catch (e) {
     res.status(500).json({ error: 'AI 리포트 생성 실패: ' + e.message });
+  }
+});
+
+// GET /entries/awards?year=2026&month=7 — 월말 p!ng 어워즈 (페르소나 심사위원 시상식)
+router.get('/awards', requireAuth, async (req, res) => {
+  const year = parseInt(req.query.year, 10);
+  const month = parseInt(req.query.month, 10); // 1~12
+  if (!year || !month || month < 1 || month > 12) {
+    return res.status(400).json({ error: 'year, month(1~12)가 필요합니다' });
+  }
+
+  const start = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+  const end = new Date(Date.UTC(year, month, 1)).toISOString();
+  const { data: rows, error } = await req.supabase
+    .from('diary_entries')
+    .select('id, title, content, created_at')
+    .gte('created_at', start)
+    .lt('created_at', end)
+    .order('created_at', { ascending: true });
+
+  if (error) return res.status(500).json({ error: error.message });
+  if (!rows || rows.length === 0) return res.json({ awards: [], closing: null, count: 0 });
+
+  try {
+    const items = rows.map((r) => ({
+      id: r.id,
+      date: `${month}월 ${new Date(r.created_at).getUTCDate()}일`,
+      title: r.title,
+      content: (r.content || '').slice(0, 500),
+    }));
+    const result = await generateMonthlyAwards(`${year}년 ${month}월`, items);
+    res.json({ ...result, count: rows.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

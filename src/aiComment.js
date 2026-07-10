@@ -228,4 +228,65 @@ async function generateMonthlyReport(monthLabel, entries) {
   return text;
 }
 
-module.exports = { generateComment, generateMonthlyReport, buildUserMessage, PERSONA_PROMPTS, DEFAULT_PROMPT, COMMON_RULES };
+// 월말 p!ng 어워즈: 페르소나 심사위원들이 한 달 일기에 상을 준다 (통계 화면)
+const AWARDS_PROMPT = `너는 일기 앱의 월말 시상식 진행자야. 페르소나 심사위원들이 사용자의 한 달 일기에 상을 준다.
+
+[심사위원과 상 — 이 순서가 우선순위]
+1) 엄마 — "제일 걱정됐던 날 상": 엄마 마음이 가장 쓰였던 일기. 다정한 잔소리 톤.
+2) 시인 — "이달의 문장상": 일기에서 가장 빛나는 문장 하나를 quote에 그대로 인용(각색 금지).
+3) 선생님 — "성장한 순간 상": 시도·배움·용기가 보였던 일기.
+4) 소설가 — "이달의 명장면 상": 가장 장면감 있는 순간. "이 장면, 소설 도입부감이다" 같은 톤.
+5) 전기 작가 — "인생의 한 페이지 상": 훗날 연표에 남을 사건. "2026년 O월, 그날이었다" 같은 톤.
+
+[규칙]
+- 상 개수 = min(5, 일기 개수). 위 우선순위 순서대로만 수여해.
+- 가능하면 서로 다른 일기에 수여하고, entry_id는 반드시 제공된 id 중에서 골라.
+- comment는 해당 페르소나 말투로 2문장. 일기에 실제로 나온 구체적 내용을 언급하고, 없는 사실을 지어내지 마.
+- quote는 시인의 상에만 넣고, 일기 본문에 실제로 있는 문장이어야 해. 다른 상은 null.
+- closing은 심사위원 일동의 한 줄 마무리 (다음 달을 기대하는 다정한 멘트).
+- 혐오·비하·자해 조장 금지. 자해 암시가 있으면 다정하게 전문 상담(자살예방상담 109)을 권해.
+
+[출력 — 반드시 아래 JSON 형식만, 다른 텍스트 없이]
+{"awards":[{"award":"상 이름","persona":"엄마","entry_id":1,"comment":"...","quote":null}],"closing":"..."}`;
+
+async function generateMonthlyAwards(monthLabel, entries) {
+  const list = entries
+    .map((e) => `- id:${e.id} | ${e.date} | ${e.title || '제목 없음'} | ${e.content}`)
+    .join('\n');
+  const completion = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.8,
+    max_tokens: 900,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: AWARDS_PROMPT },
+      { role: 'user', content: `[${monthLabel} 일기 ${entries.length}개]\n${list}` },
+    ],
+  });
+  let parsed;
+  try {
+    parsed = JSON.parse(completion.choices[0].message.content.trim());
+  } catch {
+    throw new Error('시상 결과 생성에 실패했어요. 다시 시도해주세요');
+  }
+  const validIds = new Set(entries.map((e) => e.id));
+  const awards = (Array.isArray(parsed.awards) ? parsed.awards : [])
+    .filter((a) => a && validIds.has(a.entry_id) && a.award && a.persona && a.comment)
+    .slice(0, 5)
+    .map((a) => ({
+      award: String(a.award).slice(0, 40),
+      persona: String(a.persona).slice(0, 10),
+      entry_id: a.entry_id,
+      comment: String(a.comment).slice(0, 300),
+      quote: a.quote ? String(a.quote).slice(0, 200) : null,
+    }));
+  const closing = typeof parsed.closing === 'string' ? parsed.closing.slice(0, 200) : '';
+  // 안전성 검사
+  const text = awards.map((a) => `${a.comment} ${a.quote || ''}`).join('\n') + closing;
+  if (await isFlagged(text)) {
+    throw new Error('생성 결과 검수에 실패했어요. 다시 시도해주세요');
+  }
+  return { awards, closing };
+}
+
+module.exports = { generateComment, generateMonthlyReport, generateMonthlyAwards, buildUserMessage, PERSONA_PROMPTS, DEFAULT_PROMPT, COMMON_RULES };
