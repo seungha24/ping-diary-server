@@ -21,15 +21,18 @@ router.post('/', requireAuth, async (req, res) => {
     title = '', tags = [], dates = [], persona = '', folder = '',
     shared_groups = null, // 공유할 그룹 id 목록 (null이면 모든 그룹)
     photos = [],          // 추가 사진 URL 목록 (대표는 photo_url, 최대 3)
+    created_at = null,    // 일기 날짜 (달력에서 고른 날짜, 없으면 서버 기본=지금)
   } = req.body;
   if (!content) return res.status(400).json({ error: 'content는 필수입니다' });
 
+  const createdAt = created_at && !isNaN(Date.parse(created_at)) ? created_at : null;
   const { data, error } = await req.supabase
     .from('diary_entries')
     .insert({
       user_id: req.user.id, content, visibility, photo_url,
       title, tags, dates, persona, folder, shared_groups,
       photos: Array.isArray(photos) ? photos.slice(0, 3) : [],
+      ...(createdAt ? { created_at: createdAt } : {}),
     })
     .select()
     .single();
@@ -134,6 +137,10 @@ router.patch('/:id', requireAuth, async (req, res) => {
   const patch = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) patch[key] = req.body[key];
+  }
+  // 일기 날짜 변경 (유효한 날짜 문자열일 때만)
+  if (req.body.created_at && !isNaN(Date.parse(req.body.created_at))) {
+    patch.created_at = req.body.created_at;
   }
 
   const { data, error } = await req.supabase
