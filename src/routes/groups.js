@@ -116,7 +116,7 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
   // shared_groups가 null이면 모든 그룹에 공개(기존 동작), 배열이면 이 그룹이 포함된 글만
   const { data, error } = await supabaseAdmin
     .from('diary_entries')
-    .select('id, user_id, content, photo_url, created_at, title, tags, dates, persona, ai_comment, shared_groups')
+    .select('id, user_id, content, photo_url, photos, created_at, title, tags, dates, persona, ai_comment, shared_groups')
     .in('user_id', memberIds)
     .eq('visibility', 'friends')
     .or(`shared_groups.is.null,shared_groups.cs.{${parseInt(req.params.id, 10)}}`)

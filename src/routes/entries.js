@@ -20,6 +20,7 @@ router.post('/', requireAuth, async (req, res) => {
     content, visibility = 'private', photo_url = null,
     title = '', tags = [], dates = [], persona = '', folder = '',
     shared_groups = null, // 공유할 그룹 id 목록 (null이면 모든 그룹)
+    photos = [],          // 추가 사진 URL 목록 (대표는 photo_url, 최대 3)
   } = req.body;
   if (!content) return res.status(400).json({ error: 'content는 필수입니다' });
 
@@ -28,6 +29,7 @@ router.post('/', requireAuth, async (req, res) => {
     .insert({
       user_id: req.user.id, content, visibility, photo_url,
       title, tags, dates, persona, folder, shared_groups,
+      photos: Array.isArray(photos) ? photos.slice(0, 3) : [],
     })
     .select()
     .single();
@@ -128,7 +130,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
   if (entry.user_id !== req.user.id) return res.status(403).json({ error: '본인의 일기만 수정할 수 있습니다' });
 
   // 허용된 필드만 반영
-  const allowed = ['content', 'visibility', 'photo_url', 'title', 'tags', 'dates', 'persona', 'folder', 'shared_groups'];
+  const allowed = ['content', 'visibility', 'photo_url', 'title', 'tags', 'dates', 'persona', 'folder', 'shared_groups', 'photos'];
   const patch = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) patch[key] = req.body[key];
