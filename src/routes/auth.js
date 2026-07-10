@@ -114,6 +114,7 @@ router.get('/me', requireAuth, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   const meta = data.user?.user_metadata || {};
   res.json({
+    id: data.user?.id || null,
     email: data.user?.email || null,
     folder_covers: meta.folder_covers || {},
     theme: meta.theme || null,
