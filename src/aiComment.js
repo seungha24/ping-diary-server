@@ -190,4 +190,42 @@ async function generateComment(content, persona, meta = {}) {
   return text;
 }
 
-module.exports = { generateComment, buildUserMessage, PERSONA_PROMPTS, DEFAULT_PROMPT, COMMON_RULES };
+// 한 달치 일기를 요약하는 AI 심층 리포트 (통계 화면 프리미엄 기능)
+const REPORT_PROMPT = `너는 일기 회고 코치야. 사용자의 한 달치 일기를 읽고 따뜻하고 구체적인 회고 리포트를 한국어로 써줘.
+
+[구성 — 자연스러운 문단으로, 섹션 번호나 머리말 없이]
+1) 감정 흐름: 이 달 초반·중반·후반의 감정 변화를 2~3문장으로.
+2) 반복된 주제·키워드: 자주 등장한 사람·활동·장소 2~3개를 짚어줘.
+3) 이번 달 하이라이트: 가장 인상적인 기록 하나를 구체적으로 언급해.
+4) 패턴 관찰: "~할 때 유독 ~한 이야기가 자주 나왔어요" 같은 관찰 1~2개.
+5) 격려와 피드백: 다음 달을 위한 다정한 한마디.
+
+[규칙]
+- 일기에 실제로 나온 구체적 내용만 언급해. 없는 사실을 지어내지 마.
+- 전체 300~500자. 사용자를 평가하거나 훈수 두지 마.
+- 혐오·차별·성적 표현·자해 조장 금지. 자해 암시가 있으면 다정하게 전문 상담(자살예방상담 109)을 권해.`;
+
+const SAFE_REPORT_FALLBACK = '이번 달도 꾸준히 마음을 기록해왔어요. 한 달의 이야기를 이렇게 쌓아온 것만으로도 충분히 의미 있는 시간이었어요. 다음 달의 기록도 기대할게요.';
+
+async function generateMonthlyReport(monthLabel, entries) {
+  const list = entries
+    .map((e) => `- ${e.date}: ${e.title ? `${e.title} — ` : ''}${e.content}`)
+    .join('\n');
+  const completion = await getOpenAI().chat.completions.create({
+    model: 'gpt-4o-mini',
+    temperature: 0.7,
+    max_tokens: 700,
+    messages: [
+      { role: 'system', content: REPORT_PROMPT },
+      { role: 'user', content: `[${monthLabel} 일기 ${entries.length}개]\n${list}` },
+    ],
+  });
+  const text = completion.choices[0].message.content.trim();
+  if (await isFlagged(text)) {
+    console.warn('[MODERATION] 부적절 리포트 차단 → 기본 리포트 대체');
+    return SAFE_REPORT_FALLBACK;
+  }
+  return text;
+}
+
+module.exports = { generateComment, generateMonthlyReport, buildUserMessage, PERSONA_PROMPTS, DEFAULT_PROMPT, COMMON_RULES };

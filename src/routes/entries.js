@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
-const { generateComment } = require('../aiComment');
+const { generateComment, generateMonthlyReport } = require('../aiComment');
 
 // GET /entries — 내 일기 목록
 router.get('/', requireAuth, async (req, res) => {
@@ -38,6 +38,40 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // GET /entries/:id — 단건 조회 (AI 코멘트 polling용)
+// GET /entries/report?year=2026&month=7 — 한 달 기록 AI 심층 리포트
+// ':id' 라우트보다 앞에 있어야 'report'가 id로 잡히지 않는다.
+router.get('/report', requireAuth, async (req, res) => {
+  const year = parseInt(req.query.year, 10);
+  const month = parseInt(req.query.month, 10); // 1~12
+  if (!year || !month || month < 1 || month > 12) {
+    return res.status(400).json({ error: 'year, month(1~12)가 필요합니다' });
+  }
+
+  const start = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+  const end = new Date(Date.UTC(year, month, 1)).toISOString();
+  const { data: rows, error } = await req.supabase
+    .from('diary_entries')
+    .select('title, content, created_at')
+    .gte('created_at', start)
+    .lt('created_at', end)
+    .order('created_at', { ascending: true });
+
+  if (error) return res.status(500).json({ error: error.message });
+  if (!rows || rows.length === 0) return res.json({ report: null, count: 0 });
+
+  try {
+    const items = rows.map((r) => ({
+      date: `${month}월 ${new Date(r.created_at).getUTCDate()}일`,
+      title: r.title,
+      content: (r.content || '').slice(0, 500), // 프롬프트 과대 방지
+    }));
+    const report = await generateMonthlyReport(`${year}년 ${month}월`, items);
+    res.json({ report, count: rows.length });
+  } catch (e) {
+    res.status(500).json({ error: 'AI 리포트 생성 실패: ' + e.message });
+  }
+});
+
 router.get('/:id', requireAuth, async (req, res) => {
   const { data, error } = await req.supabase
     .from('diary_entries')
