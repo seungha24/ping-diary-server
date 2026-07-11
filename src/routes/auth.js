@@ -142,6 +142,23 @@ router.patch('/blocked-users', requireAuth, async (req, res) => {
   res.json({ blocked_users: clean });
 });
 
+// PATCH /auth/push-token — 이 기기의 Expo 푸시 토큰 등록 (기기별, 최대 5개 유지)
+router.patch('/push-token', requireAuth, async (req, res) => {
+  const { push_token } = req.body;
+  if (typeof push_token !== 'string' || !push_token.startsWith('ExponentPushToken')) {
+    return res.status(400).json({ error: '유효한 Expo 푸시 토큰이 필요합니다' });
+  }
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const tokens = Array.isArray(meta.push_tokens) ? meta.push_tokens : [];
+  const next = [push_token, ...tokens.filter((t) => t !== push_token)].slice(0, 5);
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, push_tokens: next },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 // PATCH /auth/group-order — 그룹 표시 순서 저장 (내 화면 전용)
 router.patch('/group-order', requireAuth, async (req, res) => {
   const { order } = req.body;

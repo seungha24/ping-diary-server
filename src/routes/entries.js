@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { generateComment, generateMonthlyReport, generateMonthlyAwards } = require('../aiComment');
+const { notifyGroupsNewEntry } = require('../push');
 
 // GET /entries — 내 일기 목록
 router.get('/', requireAuth, async (req, res) => {
@@ -38,6 +39,11 @@ router.post('/', requireAuth, async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // 그룹에 공개한 글이면 멤버들에게 푸시 (응답을 막지 않도록 대기하지 않음)
+  if (visibility === 'friends') {
+    notifyGroupsNewEntry({ authorId: req.user.id, groupIds: shared_groups, entryTitle: title });
+  }
 
   // AI 코멘트는 24시간 후 스케줄러가 생성
   res.status(201).json(data);
@@ -159,7 +165,7 @@ router.post('/:id/comment', requireAuth, async (req, res) => {
 router.patch('/:id', requireAuth, async (req, res) => {
   const { data: entry } = await req.supabase
     .from('diary_entries')
-    .select('user_id')
+    .select('user_id, visibility, title')
     .eq('id', req.params.id)
     .single();
 
@@ -185,6 +191,15 @@ router.patch('/:id', requireAuth, async (req, res) => {
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+
+  // 비공개 → 그룹 공개로 바뀐 순간에만 푸시 (이미 공개된 글 수정은 알리지 않음)
+  if (entry.visibility !== 'friends' && data.visibility === 'friends') {
+    notifyGroupsNewEntry({
+      authorId: req.user.id,
+      groupIds: data.shared_groups,
+      entryTitle: data.title || entry.title,
+    });
+  }
   res.json(data);
 });
 
