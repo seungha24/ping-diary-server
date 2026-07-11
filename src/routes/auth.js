@@ -121,6 +121,7 @@ router.get('/me', requireAuth, async (req, res) => {
     folders: meta.folders || [],
     hidden_folders: meta.hidden_folders || [],
     blocked_users: meta.blocked_users || [],
+    group_order: meta.group_order || [],
     display_name: meta.display_name || null,
     username: meta.username || null,
   });
@@ -138,6 +139,20 @@ router.patch('/blocked-users', requireAuth, async (req, res) => {
   });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ blocked_users: clean });
+});
+
+// PATCH /auth/group-order — 그룹 표시 순서 저장 (내 화면 전용)
+router.patch('/group-order', requireAuth, async (req, res) => {
+  const { order } = req.body;
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order 배열이 필요합니다' });
+  const clean = order.slice(0, 100).map((n) => parseInt(n, 10)).filter(Number.isFinite);
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, group_order: clean },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ group_order: clean });
 });
 
 // PATCH /auth/hidden-folders — 숨긴(삭제한) 기본 폴더 id 목록 저장
