@@ -124,16 +124,22 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // 작성자 표시용: user_id → 표시이름/닉네임(없으면 이메일 앞부분)
+  // 작성자 표시용: user_id → 표시이름/닉네임(없으면 이메일 앞부분) + 프로필 사진
   const authorMap = {};
+  const avatarMap = {};
   for (const uid of memberIds) {
     try {
       const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
       const m = u?.user?.user_metadata || {};
       authorMap[uid] = m.display_name || m.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버');
+      avatarMap[uid] = m.avatar_url || null;
     } catch (_) {}
   }
-  const enriched = (data || []).map((e) => ({ ...e, author: authorMap[e.user_id] || '멤버' }));
+  const enriched = (data || []).map((e) => ({
+    ...e,
+    author: authorMap[e.user_id] || '멤버',
+    author_avatar: avatarMap[e.user_id] || null,
+  }));
   res.json(enriched);
 });
 
