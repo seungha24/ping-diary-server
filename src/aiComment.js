@@ -131,9 +131,19 @@ const DEFAULT_PROMPT = `[페르소나: 친구]
  * @param {{title?: string, tags?: string[], mood?: string, recent?: string}} meta 부가 정보
  * @returns {string} 모델에 전달할 [일기] 블록
  */
-// 본문 중간 사진 마커([photo:URL])는 AI에게 노이즈라 제거
+// 본문 마커(질문·사진)는 AI에게 노이즈라 제거
 function stripPhotoMarkers(text) {
-  return String(text || '').replace(/\[photo:[^\]\s]+\]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+  return String(text || '')
+    .replace(/^\[q:[^\]]+\]\s*/, '')
+    .replace(/\[photo:[^\]\s]+\]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// 본문 맨 앞 [q:질문] 마커에서 '오늘의 질문' 추출
+function extractQuestion(text) {
+  const m = String(text || '').match(/^\[q:([^\]]+)\]\s*/);
+  return m ? m[1] : null;
 }
 
 function buildUserMessage(content, meta = {}) {
@@ -141,6 +151,8 @@ function buildUserMessage(content, meta = {}) {
   const tagStr = Array.isArray(tags) ? tags.join(', ') : (tags || '');
   const lines = ['[일기]'];
   lines.push(`제목: ${title && title.trim() ? title.trim() : '(없음)'}`);
+  const question = extractQuestion(content);
+  if (question) lines.push(`오늘의 질문: ${question} (사용자가 이 질문에 답하며 쓴 일기 — 답한 내용에 반응해줘)`);
   lines.push(`내용: ${stripPhotoMarkers(content)}`);
   lines.push(`태그: ${tagStr || '(없음)'}`);
   if (mood && String(mood).trim()) lines.push(`기분: ${mood}`);
