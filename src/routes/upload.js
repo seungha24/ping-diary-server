@@ -12,7 +12,7 @@ const supabaseAdmin = createClient(
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB (아이폰 원본 사진 대응)
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('이미지 파일만 업로드할 수 있습니다'));
@@ -44,7 +44,7 @@ router.post('/', requireAuth, upload.single('file'), async (req, res) => {
 // multer 에러 처리
 router.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ error: '5MB 이하 이미지만 업로드할 수 있습니다' });
+    return res.status(400).json({ error: '20MB 이하 이미지만 업로드할 수 있습니다' });
   }
   res.status(400).json({ error: err.message });
 });
