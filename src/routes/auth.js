@@ -124,6 +124,7 @@ router.get('/me', requireAuth, async (req, res) => {
     group_order: meta.group_order || [],
     display_name: meta.display_name || null,
     username: meta.username || null,
+    avatar_url: meta.avatar_url || null,
   });
 });
 
@@ -171,18 +172,19 @@ router.patch('/hidden-folders', requireAuth, async (req, res) => {
 
 // PATCH /auth/profile — 표시 이름/아이디 저장 (user_metadata)
 router.patch('/profile', requireAuth, async (req, res) => {
-  const { display_name, username } = req.body;
+  const { display_name, username, avatar_url } = req.body;
   const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
   const meta = cur.user?.user_metadata || {};
   const next = { ...meta };
   if (typeof display_name === 'string') next.display_name = display_name.trim().slice(0, 30);
   if (typeof username === 'string') next.username = username.trim().slice(0, 30);
+  if (typeof avatar_url === 'string' && /^https?:\/\//.test(avatar_url)) next.avatar_url = avatar_url.slice(0, 500);
 
   const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
     user_metadata: next,
   });
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ display_name: next.display_name || null, username: next.username || null });
+  res.json({ display_name: next.display_name || null, username: next.username || null, avatar_url: next.avatar_url || null });
 });
 
 // PATCH /auth/folders — 사용자가 만든 폴더 목록 저장 (user_metadata)
