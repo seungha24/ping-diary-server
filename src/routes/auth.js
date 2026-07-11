@@ -239,7 +239,7 @@ router.get('/kakao/start', (req, res) => {
 router.get('/kakao/callback', async (req, res) => {
   const { code, state, error: kakaoErr } = req.query;
   const appUrl =
-    typeof state === 'string' && /^https?:\/\//.test(state) ? state : APP_URL_DEFAULT;
+    typeof state === 'string' && /^(https?|pingdiary):\/\//.test(state) ? state : APP_URL_DEFAULT;
   const fail = (msg) => res.redirect(`${appUrl}?kakao_error=${encodeURIComponent(msg)}`);
 
   try {
@@ -319,7 +319,7 @@ router.get('/naver/start', (req, res) => {
 router.get('/naver/callback', async (req, res) => {
   const { code, state, error: naverErr } = req.query;
   const appUrl =
-    typeof state === 'string' && /^https?:\/\//.test(state) ? state : APP_URL_DEFAULT;
+    typeof state === 'string' && /^(https?|pingdiary):\/\//.test(state) ? state : APP_URL_DEFAULT;
   const fail = (msg) => res.redirect(`${appUrl}?naver_error=${encodeURIComponent(msg)}`);
 
   try {
