@@ -7,14 +7,17 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_KEY  // RLS 우회해서 전체 조회
 );
 
+// 작성 후 이 시간이 지난 일기에 AI 코멘트를 단다
+const COMMENT_DELAY_HOURS = 10;
+
 async function generatePendingComments() {
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const cutoff = new Date(Date.now() - COMMENT_DELAY_HOURS * 60 * 60 * 1000).toISOString();
 
   const { data: entries, error } = await supabaseAdmin
     .from('diary_entries')
     .select('id, content, persona, title, tags')
     .is('ai_comment', null)
-    .lt('created_at', yesterday);
+    .lt('created_at', cutoff);
 
   if (error || !entries?.length) return;
 
@@ -37,7 +40,7 @@ async function generatePendingComments() {
 
 // 매 시간 정각마다 실행
 cron.schedule('0 * * * *', () => {
-  console.log('스케줄러 실행 — 24시간 지난 일기 AI 코멘트 생성 중...');
+  console.log(`스케줄러 실행 — ${COMMENT_DELAY_HOURS}시간 지난 일기 AI 코멘트 생성 중...`);
   generatePendingComments();
 });
 

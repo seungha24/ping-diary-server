@@ -45,7 +45,7 @@ router.post('/', requireAuth, async (req, res) => {
     notifyGroupsNewEntry({ authorId: req.user.id, groupIds: shared_groups, entryTitle: title });
   }
 
-  // AI 코멘트는 24시간 후 스케줄러가 생성
+  // AI 코멘트는 10시간 후 스케줄러가 생성 (scheduler.js COMMENT_DELAY_HOURS)
   res.status(201).json(data);
 });
 
