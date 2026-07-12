@@ -24,7 +24,8 @@ router.get('/', requireAuth, async (req, res) => {
   const ids = (memberships || []).map((m) => m.group_id);
   if (!ids.length) return res.json([]);
 
-  const { data: groups, error } = await req.supabase
+  // groups는 관리자 클라이언트로 조회하되 '내가 속한 id'로만 제한 (초대코드 직접 노출 차단)
+  const { data: groups, error } = await supabaseAdmin
     .from('groups')
     .select('*')
     .in('id', ids)
@@ -51,7 +52,7 @@ router.post('/', requireAuth, async (req, res) => {
 
   const invite_code = randomCode();
 
-  const { data: group, error } = await req.supabase
+  const { data: group, error } = await supabaseAdmin
     .from('groups')
     .insert({ name, invite_code })
     .select()
@@ -60,7 +61,7 @@ router.post('/', requireAuth, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   // 생성자를 멤버로 자동 추가
-  await req.supabase.from('group_members').insert({ group_id: group.id, user_id: req.user.id });
+  await supabaseAdmin.from('group_members').insert({ group_id: group.id, user_id: req.user.id });
 
   res.status(201).json(group);
 });
@@ -70,7 +71,8 @@ router.post('/join', requireAuth, async (req, res) => {
   const { invite_code } = req.body;
   if (!invite_code) return res.status(400).json({ error: 'invite_code는 필수입니다' });
 
-  const { data: group } = await req.supabase
+  // 초대코드 조회는 관리자 클라이언트로 (사용자가 groups를 직접 못 읽으므로)
+  const { data: group } = await supabaseAdmin
     .from('groups')
     .select('*')
     .eq('invite_code', invite_code.toUpperCase())
@@ -78,7 +80,7 @@ router.post('/join', requireAuth, async (req, res) => {
 
   if (!group) return res.status(404).json({ error: '유효하지 않은 초대 코드입니다' });
 
-  await req.supabase
+  await supabaseAdmin
     .from('group_members')
     .upsert({ group_id: group.id, user_id: req.user.id });
 
