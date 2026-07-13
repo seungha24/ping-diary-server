@@ -318,7 +318,7 @@ const AWARD_JUDGES = [
   { persona: '소설가', award: '이달의 명장면 상', desc: '가장 장면감 있는 순간. "이 장면, 소설 도입부감이다" 같은 톤.' },
   { persona: '전기 작가', award: '인생의 한 페이지 상', desc: '훗날 연표에 남을 사건. "2026년 O월, 그날이었다" 같은 톤.' },
   { persona: '언제나 내 편', award: '무조건 잘했어 상', desc: '결과와 상관없이 제일 애쓴 일기. 무조건 편들어주는 다정한 반말 톤.' },
-  { persona: '투덜이', award: '이게 최선이었냐 상', desc: '제일 어이없어서 오히려 기억에 남는 일기. 끝까지 시큰둥한 츤데레 톤 (칭찬 금지, 그래도 미워할 수 없게).' },
+  { persona: '투덜이', award: '이게 최선이었냐 상', desc: '제일 어이없어서 오히려 기억에 남는 일기. 시큰둥한 츤데레 톤 — 투덜거리되 가볍고 귀엽게, 사용자를 모욕·비하하는 표현은 절대 금지.' },
   { persona: '고양이', award: '집사 관찰일지 상', desc: '고양이 눈에 제일 흥미로웠던 인간의 하루. "~냥/~다냥" 말투, 사용자는 "집사"라고 부름.' },
   { persona: '트레이너', award: '갓생 인증 상', desc: '제일 부지런했거나 루틴을 지킨 일기. 열혈 스파르타 톤, 마지막에 다음 목표 하나 제시.' },
 ];
@@ -352,7 +352,7 @@ ${lines}
 {"awards":[{"award":"상 이름","persona":"엄마","entry_id":1,"comment":"...","quote":null}],"closing":"..."}`;
 }
 
-async function generateMonthlyAwards(monthLabel, entries) {
+async function generateMonthlyAwards(monthLabel, entries, attempt = 0) {
   const list = entries
     .map((e) => `- id:${e.id} | ${e.date} | ${e.title || '제목 없음'} | ${stripPhotoMarkers(e.content)}`)
     .join('\n');
@@ -385,9 +385,13 @@ async function generateMonthlyAwards(monthLabel, entries) {
       quote: a.quote ? String(a.quote).slice(0, 200) : null,
     }));
   const closing = typeof parsed.closing === 'string' ? parsed.closing.slice(0, 200) : '';
-  // 안전성 검사
+  // 안전성 검사 — 걸리면 새 심사위원 조합으로 한 번 자동 재생성 (독한 톤이 오판될 수 있음)
   const text = awards.map((a) => `${a.comment} ${a.quote || ''}`).join('\n') + closing;
   if (await isFlagged(text)) {
+    if (attempt < 1) {
+      console.warn('[MODERATION] 어워즈 검수 걸림 → 재생성 시도');
+      return generateMonthlyAwards(monthLabel, entries, attempt + 1);
+    }
     throw new Error('생성 결과 검수에 실패했어요. 다시 시도해주세요');
   }
   return { awards, closing };
