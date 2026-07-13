@@ -310,37 +310,60 @@ async function generateMonthlyReport(monthLabel, entries) {
 }
 
 // 월말 p!ng 어워즈: 페르소나 심사위원들이 한 달 일기에 상을 준다 (통계 화면)
-const AWARDS_PROMPT = `너는 일기 앱의 월말 시상식 진행자야. 페르소나 심사위원들이 사용자의 한 달 일기에 상을 준다.
+// 심사위원 풀 — 시상식마다 4명을 무작위로 뽑아 매번 조합이 달라진다
+const AWARD_JUDGES = [
+  { persona: '엄마', award: '제일 걱정됐던 날 상', desc: '엄마 마음이 가장 쓰였던 일기. 다정한 잔소리 톤.' },
+  { persona: '시인', award: '이달의 문장상', desc: '일기에서 가장 빛나는 문장 하나를 quote에 그대로 인용(각색 금지).' },
+  { persona: '선생님', award: '성장한 순간 상', desc: '시도·배움·용기가 보였던 일기.' },
+  { persona: '소설가', award: '이달의 명장면 상', desc: '가장 장면감 있는 순간. "이 장면, 소설 도입부감이다" 같은 톤.' },
+  { persona: '전기 작가', award: '인생의 한 페이지 상', desc: '훗날 연표에 남을 사건. "2026년 O월, 그날이었다" 같은 톤.' },
+  { persona: '언제나 내 편', award: '무조건 잘했어 상', desc: '결과와 상관없이 제일 애쓴 일기. 무조건 편들어주는 다정한 반말 톤.' },
+  { persona: '투덜이', award: '이게 최선이었냐 상', desc: '제일 어이없어서 오히려 기억에 남는 일기. 끝까지 시큰둥한 츤데레 톤 (칭찬 금지, 그래도 미워할 수 없게).' },
+  { persona: '고양이', award: '집사 관찰일지 상', desc: '고양이 눈에 제일 흥미로웠던 인간의 하루. "~냥/~다냥" 말투, 사용자는 "집사"라고 부름.' },
+  { persona: '트레이너', award: '갓생 인증 상', desc: '제일 부지런했거나 루틴을 지킨 일기. 열혈 스파르타 톤, 마지막에 다음 목표 하나 제시.' },
+];
 
-[심사위원과 상 — 이 순서가 우선순위]
-1) 엄마 — "제일 걱정됐던 날 상": 엄마 마음이 가장 쓰였던 일기. 다정한 잔소리 톤.
-2) 시인 — "이달의 문장상": 일기에서 가장 빛나는 문장 하나를 quote에 그대로 인용(각색 금지).
-3) 선생님 — "성장한 순간 상": 시도·배움·용기가 보였던 일기.
-4) 소설가 — "이달의 명장면 상": 가장 장면감 있는 순간. "이 장면, 소설 도입부감이다" 같은 톤.
-5) 전기 작가 — "인생의 한 페이지 상": 훗날 연표에 남을 사건. "2026년 O월, 그날이었다" 같은 톤.
+function pickAwardJudges(count = 4) {
+  const pool = [...AWARD_JUDGES];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
+}
+
+function buildAwardsPrompt(judges) {
+  const lines = judges.map((j, i) => `${i + 1}) ${j.persona} — "${j.award}": ${j.desc}`).join('\n');
+  const hasPoet = judges.some((j) => j.persona === '시인');
+  return `너는 일기 앱의 월말 시상식 진행자야. 페르소나 심사위원들이 사용자의 한 달 일기에 상을 준다.
+
+[이번 달 심사위원과 상 — 이 순서가 우선순위]
+${lines}
 
 [규칙]
-- 상 개수 = min(5, 일기 개수). 위 우선순위 순서대로만 수여해.
+- 상 개수 = min(${judges.length}, 일기 개수). 위 우선순위 순서대로만 수여해. 다른 심사위원을 추가하지 마.
 - 가능하면 서로 다른 일기에 수여하고, entry_id는 반드시 제공된 id 중에서 골라.
 - comment는 해당 페르소나 말투로 2문장. 일기에 실제로 나온 구체적 내용을 언급하고, 없는 사실을 지어내지 마.
-- quote는 시인의 상에만 넣고, 일기 본문에 실제로 있는 문장이어야 해. 다른 상은 null.
+- ${hasPoet ? 'quote는 시인의 상에만 넣고, 일기 본문에 실제로 있는 문장이어야 해. 다른 상은 null.' : 'quote는 모든 상에서 null.'}
 - closing은 심사위원 일동의 한 줄 마무리 (다음 달을 기대하는 다정한 멘트).
 - 혐오·비하·자해 조장 금지. 자해 암시가 있으면 다정하게 전문 상담(자살예방상담 109)을 권해.
 
 [출력 — 반드시 아래 JSON 형식만, 다른 텍스트 없이]
 {"awards":[{"award":"상 이름","persona":"엄마","entry_id":1,"comment":"...","quote":null}],"closing":"..."}`;
+}
 
 async function generateMonthlyAwards(monthLabel, entries) {
   const list = entries
     .map((e) => `- id:${e.id} | ${e.date} | ${e.title || '제목 없음'} | ${stripPhotoMarkers(e.content)}`)
     .join('\n');
+  const judges = pickAwardJudges(4); // 9명 풀에서 매번 4명 무작위 (열 때마다 조합이 바뀜)
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.8,
     max_tokens: 900,
     response_format: { type: 'json_object' },
     messages: [
-      { role: 'system', content: AWARDS_PROMPT },
+      { role: 'system', content: buildAwardsPrompt(judges) },
       { role: 'user', content: `[${monthLabel} 일기 ${entries.length}개]\n${list}` },
     ],
   });
@@ -353,7 +376,7 @@ async function generateMonthlyAwards(monthLabel, entries) {
   const validIds = new Set(entries.map((e) => e.id));
   const awards = (Array.isArray(parsed.awards) ? parsed.awards : [])
     .filter((a) => a && validIds.has(a.entry_id) && a.award && a.persona && a.comment)
-    .slice(0, 5)
+    .slice(0, 4)
     .map((a) => ({
       award: String(a.award).slice(0, 40),
       persona: String(a.persona).slice(0, 10),
