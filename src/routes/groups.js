@@ -80,18 +80,14 @@ router.post('/join', requireAuth, async (req, res) => {
 
   if (!group) return res.status(404).json({ error: '유효하지 않은 초대 코드입니다' });
 
-  // 이미 멤버인지 먼저 확인 → 재참여해도 중복 행/멤버 수 부풀림 없이 멱등하게
-  const { data: existing } = await supabaseAdmin
+  // 멱등 참여: unique(group_id, user_id) 제약 + upsert라 동시 요청(더블탭)에도 중복 행 없음
+  const { error: joinError } = await supabaseAdmin
     .from('group_members')
-    .select('id')
-    .eq('group_id', group.id)
-    .eq('user_id', req.user.id)
-    .maybeSingle();
-  if (!existing) {
-    await supabaseAdmin
-      .from('group_members')
-      .insert({ group_id: group.id, user_id: req.user.id });
-  }
+    .upsert(
+      { group_id: group.id, user_id: req.user.id },
+      { onConflict: 'group_id,user_id', ignoreDuplicates: true }
+    );
+  if (joinError) return res.status(500).json({ error: joinError.message });
 
   res.json({ id: group.id, name: group.name });
 });
