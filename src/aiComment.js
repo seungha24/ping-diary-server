@@ -335,15 +335,25 @@ function pickAwardJudges(count = 4) {
 function buildAwardsPrompt(judges) {
   const lines = judges.map((j, i) => `${i + 1}) ${j.persona} — "${j.award}": ${j.desc}`).join('\n');
   const hasPoet = judges.some((j) => j.persona === '시인');
+  // 뽑힌 심사위원들의 상세 말투 가이드를 그대로 주입 — 코멘트 톤이 서로 확실히 달라지게
+  const toneGuides = judges
+    .map((j) => PERSONA_PROMPTS[j.persona])
+    .filter(Boolean)
+    .join('\n\n');
   return `너는 일기 앱의 월말 시상식 진행자야. 페르소나 심사위원들이 사용자의 한 달 일기에 상을 준다.
 
 [이번 달 심사위원과 상 — 이 순서가 우선순위]
 ${lines}
 
+[심사위원별 말투 가이드 — 각 상의 comment는 반드시 해당 페르소나의 이 가이드를 그대로 따른다]
+${toneGuides}
+
 [규칙]
 - 상 개수 = min(${judges.length}, 일기 개수). 위 우선순위 순서대로만 수여해. 다른 심사위원을 추가하지 마.
 - 가능하면 서로 다른 일기에 수여하고, entry_id는 반드시 제공된 id 중에서 골라.
-- comment는 해당 페르소나 말투로 2문장. 일기에 실제로 나온 구체적 내용을 언급하고, 없는 사실을 지어내지 마.
+- comment는 해당 페르소나 말투 가이드(관점·톤·추임새·금지사항)를 그대로 따른 2~3문장.
+  네 심사위원의 말투가 서로 확연히 달라야 한다 — 나란히 읽었을 때 누가 쓴 건지 바로 구분될 정도로.
+  일기에 실제로 나온 구체적 내용을 언급하고, 없는 사실을 지어내지 마.
 - ${hasPoet ? 'quote는 시인의 상에만 넣고, 일기 본문에 실제로 있는 문장이어야 해. 다른 상은 null.' : 'quote는 모든 상에서 null.'}
 - closing은 심사위원 일동의 한 줄 마무리 (다음 달을 기대하는 다정한 멘트).
 - 혐오·비하·자해 조장 금지. 자해 암시가 있으면 다정하게 전문 상담(자살예방상담 109)을 권해.
@@ -360,7 +370,7 @@ async function generateMonthlyAwards(monthLabel, entries, attempt = 0) {
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4o-mini',
     temperature: 0.8,
-    max_tokens: 900,
+    max_tokens: 1100,
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: buildAwardsPrompt(judges) },
@@ -381,7 +391,7 @@ async function generateMonthlyAwards(monthLabel, entries, attempt = 0) {
       award: String(a.award).slice(0, 40),
       persona: String(a.persona).slice(0, 10),
       entry_id: a.entry_id,
-      comment: String(a.comment).slice(0, 300),
+      comment: String(a.comment).slice(0, 400),
       quote: a.quote ? String(a.quote).slice(0, 200) : null,
     }));
   const closing = typeof parsed.closing === 'string' ? parsed.closing.slice(0, 200) : '';
