@@ -17,3 +17,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        env:
+          # 테스트는 외부 호출을 모킹하므로 더미 값으로 충분 (모듈 로드용)
+          SUPABASE_URL: https://example.supabase.co
+          SUPABASE_ANON_KEY: test-anon-key
+          SUPABASE_SERVICE_KEY: test-service-key
+          OPENAI_API_KEY: test-openai-key
