@@ -185,7 +185,7 @@ router.post('/:id/comment', requireAuth, async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
   } catch (e) {
-    res.status(500).json({ error: 'AI 코멘트 생성 실패: ' + e.message });
+    res.status(500).json({ error: '퐁 생성 실패: ' + e.message });
   }
 });
 
