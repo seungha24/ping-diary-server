@@ -146,6 +146,7 @@ router.get('/me', requireAuth, async (req, res) => {
     folders: meta.folders || [],
     hidden_folders: meta.hidden_folders || [],
     blocked_users: meta.blocked_users || [],
+    muted_groups: meta.muted_groups || [],
     group_order: meta.group_order || [],
     display_name: meta.display_name || null,
     username: meta.username || null,
@@ -165,6 +166,20 @@ router.patch('/blocked-users', requireAuth, async (req, res) => {
   });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ blocked_users: clean });
+});
+
+// PATCH /auth/muted-groups — 푸시 알림을 끈 그룹 id 목록 저장 (그룹별 알림 끄기)
+router.patch('/muted-groups', requireAuth, async (req, res) => {
+  const { muted } = req.body;
+  if (!Array.isArray(muted)) return res.status(400).json({ error: 'muted 배열이 필요합니다' });
+  const clean = [...new Set(muted.slice(0, 100).map((v) => parseInt(v, 10)).filter(Number.isFinite))];
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, muted_groups: clean },
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ muted_groups: clean });
 });
 
 // PATCH /auth/push-token — 이 기기의 Expo 푸시 토큰 등록 (기기별, 최대 5개 유지)

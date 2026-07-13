@@ -32,17 +32,23 @@ async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle }) {
       || (authorRes?.data?.user?.email || '').split('@')[0] || '멤버';
     const nameById = new Map((groups || []).map((g) => [g.id, g.name]));
 
-    // 여러 그룹에 겹치는 멤버에게는 한 번만 (첫 그룹 이름으로)
-    const groupByUser = new Map();
+    // 여러 그룹에 겹치는 멤버에게는 한 번만 (뮤트 안 한 첫 그룹 이름으로)
+    const groupsByUser = new Map();
     for (const m of members || []) {
       if (m.user_id === authorId) continue;
-      if (!groupByUser.has(m.user_id)) groupByUser.set(m.user_id, m.group_id);
+      if (!groupsByUser.has(m.user_id)) groupsByUser.set(m.user_id, []);
+      groupsByUser.get(m.user_id).push(m.group_id);
     }
 
     const messages = [];
-    for (const [userId, groupId] of groupByUser) {
+    for (const [userId, userGroupIds] of groupsByUser) {
       const { data } = await supabaseAdmin.auth.admin.getUserById(userId);
-      const tokens = data?.user?.user_metadata?.push_tokens || [];
+      const meta = data?.user?.user_metadata || {};
+      // 알림을 끈 그룹은 제외 (그룹별 알림 설정) — 전부 뮤트면 발송 안 함
+      const muted = new Set(Array.isArray(meta.muted_groups) ? meta.muted_groups : []);
+      const groupId = userGroupIds.find((id) => !muted.has(id));
+      if (groupId === undefined) continue;
+      const tokens = meta.push_tokens || [];
       const gname = nameById.get(groupId) || '그룹';
       for (const to of tokens) {
         messages.push({

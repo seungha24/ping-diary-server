@@ -52,11 +52,20 @@ router.post('/', requireAuth, async (req, res) => {
 
   const invite_code = randomCode();
 
-  const { data: group, error } = await supabaseAdmin
+  let { data: group, error } = await supabaseAdmin
     .from('groups')
-    .insert({ name, invite_code })
+    .insert({ name, invite_code, created_by: req.user.id }) // 만든 사람 = 방장
     .select()
     .single();
+
+  // created_by 컬럼이 아직 없는 DB(마이그레이션 전)에서도 생성은 되도록 폴백
+  if (error && /created_by/i.test(error.message)) {
+    ({ data: group, error } = await supabaseAdmin
+      .from('groups')
+      .insert({ name, invite_code })
+      .select()
+      .single());
+  }
 
   if (error) return res.status(500).json({ error: error.message });
 
@@ -214,17 +223,28 @@ router.patch('/:id', requireAuth, async (req, res) => {
   res.json(data);
 });
 
-// DELETE /groups/:id — 그룹 삭제 (멤버만 가능). 멤버 전원 제거 후 그룹 삭제.
+// DELETE /groups/:id — 그룹 삭제 (방장만 가능). 멤버 전원 제거 후 그룹 삭제.
 router.delete('/:id', requireAuth, async (req, res) => {
-  // 요청자가 이 그룹의 멤버인지 확인
-  const { data: membership } = await supabaseAdmin
-    .from('group_members')
-    .select('user_id')
-    .eq('group_id', req.params.id)
-    .eq('user_id', req.user.id)
+  const { data: group } = await supabaseAdmin
+    .from('groups')
+    .select('created_by')
+    .eq('id', req.params.id)
     .maybeSingle();
 
-  if (!membership) return res.status(403).json({ error: '이 그룹의 멤버만 삭제할 수 있습니다' });
+  if (!group) return res.status(404).json({ error: '그룹을 찾을 수 없습니다' });
+  if (group.created_by && group.created_by !== req.user.id) {
+    return res.status(403).json({ error: '그룹을 만든 사람만 삭제할 수 있어요' });
+  }
+  // created_by가 비어있는 레거시 그룹은 기존처럼 멤버면 삭제 가능 (백필 SQL 실행 후엔 도달 안 함)
+  if (!group.created_by) {
+    const { data: membership } = await supabaseAdmin
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', req.params.id)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    if (!membership) return res.status(403).json({ error: '이 그룹의 멤버만 삭제할 수 있습니다' });
+  }
 
   // 멤버 관계 먼저 제거 후 그룹 삭제 (FK 제약 회피)
   await supabaseAdmin.from('group_members').delete().eq('group_id', req.params.id);
