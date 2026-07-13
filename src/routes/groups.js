@@ -94,6 +94,10 @@ router.post('/join', requireAuth, async (req, res) => {
 
 // GET /groups/:id/entries — 그룹 일기 조회
 router.get('/:id/entries', requireAuth, async (req, res) => {
+  // id는 정수만 허용 (아래 .or() 필터 문자열에 그대로 들어가므로 선검증)
+  const groupId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(groupId)) return res.status(400).json({ error: '유효한 그룹 id가 필요합니다' });
+
   // 멤버 확인
   const { data: membership } = await req.supabase
     .from('group_members')
@@ -126,7 +130,7 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
     .select('id, user_id, content, photo_url, photos, created_at, title, tags, dates, persona, ai_comment, shared_groups')
     .in('user_id', memberIds)
     .eq('visibility', 'friends')
-    .or(`shared_groups.is.null,shared_groups.cs.{${parseInt(req.params.id, 10)}}`)
+    .or(`shared_groups.is.null,shared_groups.cs.{${groupId}}`)
     .order('created_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });

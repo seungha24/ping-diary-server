@@ -24,6 +24,29 @@ const SERVER_URL = process.env.SERVER_URL || 'https://ping-diary-server-producti
 const KAKAO_REDIRECT_URI = `${SERVER_URL}/auth/kakao/callback`;
 const APP_URL_DEFAULT = process.env.APP_URL || 'https://ping-diary.vercel.app';
 
+// 소셜 콜백 리다이렉트 허용 목록 — 토큰이 URL 해시로 전달되므로
+// 임의 도메인 리다이렉트(오픈 리다이렉트 = 토큰 탈취)를 반드시 차단한다.
+const ALLOWED_RETURN_HOSTS = new Set(['ping-diary.vercel.app', 'localhost', '127.0.0.1']);
+try { ALLOWED_RETURN_HOSTS.add(new URL(APP_URL_DEFAULT).hostname); } catch {}
+function safeReturnUrl(raw) {
+  if (typeof raw !== 'string') return APP_URL_DEFAULT;
+  if (/^pingdiary:\/\//.test(raw)) return raw; // 앱 딥링크
+  try {
+    const u = new URL(raw);
+    if ((u.protocol === 'https:' || u.protocol === 'http:') && ALLOWED_RETURN_HOSTS.has(u.hostname)) {
+      return raw;
+    }
+  } catch {}
+  return APP_URL_DEFAULT;
+}
+
+// 소셜 계정 결정적 비밀번호의 서명 키 — 반드시 env로만.
+// (리터럴 폴백을 두면 소스를 읽은 누구나 임의 소셜 계정 비밀번호를 계산할 수 있다)
+const SOCIAL_PW_SECRET = process.env.SUPABASE_SERVICE_KEY;
+if (!SOCIAL_PW_SECRET) {
+  throw new Error('SUPABASE_SERVICE_KEY 환경변수가 필요합니다 (소셜 로그인 비밀번호 서명 키)');
+}
+
 // ── 네이버 로그인 (커스텀 OAuth) ──────────────────────────────
 // 카카오와 동일하게 서버에서 네이버 OAuth를 처리해 Supabase 세션을 발급한다.
 // 네이버 개발자센터(developers.naver.com) 애플리케이션 값.
@@ -75,6 +98,8 @@ router.post('/login', async (req, res) => {
 
   res.json({
     token: data.session.access_token,
+    // 앱이 Supabase 세션으로 채택해 1시간 만료 후에도 자동 갱신되도록 refresh_token 동봉
+    refresh_token: data.session.refresh_token,
     user: { id: data.user.id, email: data.user.email },
   });
 });
@@ -258,7 +283,7 @@ router.patch('/folder-covers', requireAuth, async (req, res) => {
 
 // GET /auth/kakao/start — 카카오 인가 페이지로 리디렉트 (닉네임만 요청)
 router.get('/kakao/start', (req, res) => {
-  const ret = typeof req.query.return === 'string' ? req.query.return : APP_URL_DEFAULT;
+  const ret = safeReturnUrl(req.query.return);
   const params = new URLSearchParams({
     client_id: KAKAO_REST_KEY,
     redirect_uri: KAKAO_REDIRECT_URI,
@@ -273,7 +298,7 @@ router.get('/kakao/start', (req, res) => {
 router.get('/kakao/callback', async (req, res) => {
   const { code, state, error: kakaoErr } = req.query;
   const appUrl =
-    typeof state === 'string' && /^(https?|pingdiary):\/\//.test(state) ? state : APP_URL_DEFAULT;
+    safeReturnUrl(state);
   const fail = (msg) => res.redirect(`${appUrl}?kakao_error=${encodeURIComponent(msg)}`);
 
   try {
@@ -309,7 +334,7 @@ router.get('/kakao/callback', async (req, res) => {
     // 3) Supabase 사용자 확보 — 합성 이메일 + 결정적 비밀번호 (재로그인 시 동일)
     const email = `kakao_${kakaoId}@ping-diary.app`;
     const password = crypto
-      .createHmac('sha256', process.env.SUPABASE_SERVICE_KEY || 'ping-kakao-secret')
+      .createHmac('sha256', SOCIAL_PW_SECRET)
       .update(`kakao:${kakaoId}`)
       .digest('hex');
 
@@ -339,7 +364,7 @@ router.get('/kakao/callback', async (req, res) => {
 
 // GET /auth/naver/start — 네이버 인가 페이지로 리디렉트
 router.get('/naver/start', (req, res) => {
-  const ret = typeof req.query.return === 'string' ? req.query.return : APP_URL_DEFAULT;
+  const ret = safeReturnUrl(req.query.return);
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: NAVER_CLIENT_ID,
@@ -353,7 +378,7 @@ router.get('/naver/start', (req, res) => {
 router.get('/naver/callback', async (req, res) => {
   const { code, state, error: naverErr } = req.query;
   const appUrl =
-    typeof state === 'string' && /^(https?|pingdiary):\/\//.test(state) ? state : APP_URL_DEFAULT;
+    safeReturnUrl(state);
   const fail = (msg) => res.redirect(`${appUrl}?naver_error=${encodeURIComponent(msg)}`);
 
   try {
@@ -388,7 +413,7 @@ router.get('/naver/callback', async (req, res) => {
     const emailLocal = crypto.createHash('sha256').update(`naver:${naverId}`).digest('hex').slice(0, 24);
     const email = `naver_${emailLocal}@ping-diary.app`;
     const password = crypto
-      .createHmac('sha256', process.env.SUPABASE_SERVICE_KEY || 'ping-naver-secret')
+      .createHmac('sha256', SOCIAL_PW_SECRET)
       .update(`naver:${naverId}`)
       .digest('hex');
 

@@ -10,14 +10,30 @@ const supabaseAdmin = createClient(
 // 작성 후 이 시간이 지난 일기에 AI 코멘트를 단다
 const COMMENT_DELAY_HOURS = 10;
 
-async function generatePendingComments() {
-  const cutoff = new Date(Date.now() - COMMENT_DELAY_HOURS * 60 * 60 * 1000).toISOString();
+// 배치가 1시간을 넘겨 다음 정각과 겹쳐도 같은 일기에 이중 생성(비용 중복)되지 않게
+let running = false;
 
+async function generatePendingComments() {
+  if (running) return; // 이전 배치가 아직 도는 중이면 이번 틱은 건너뜀
+  running = true;
+  try {
+    await generatePendingCommentsInner();
+  } finally {
+    running = false;
+  }
+}
+
+async function generatePendingCommentsInner() {
+  const cutoff = new Date(Date.now() - COMMENT_DELAY_HOURS * 60 * 60 * 1000).toISOString();
+  const now = new Date().toISOString();
+
+  // 과거 기준(10시간 경과) + 미래 날짜 일기(달력에서 미래를 고른 경우,
+  // created_at > now라 영영 cutoff를 못 넘던 것)도 대상에 포함
   const { data: entries, error } = await supabaseAdmin
     .from('diary_entries')
     .select('id, content, persona, title, tags')
     .is('ai_comment', null)
-    .lt('created_at', cutoff);
+    .or(`created_at.lt.${cutoff},created_at.gt.${now}`);
 
   if (error || !entries?.length) return;
 

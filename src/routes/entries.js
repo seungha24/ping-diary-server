@@ -1,8 +1,34 @@
 const express = require('express');
 const router = express.Router();
+const { createClient } = require('@supabase/supabase-js');
 const { requireAuth } = require('../middleware/auth');
 const { generateComment, generateMonthlyReport, generateMonthlyAwards } = require('../aiComment');
 const { notifyGroupsNewEntry } = require('../push');
+
+// 멤버십 검증용 관리자 클라이언트 (group_members는 RLS로 잠겨 있음)
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+
+/**
+ * 클라이언트가 보낸 shared_groups를 작성자가 실제 속한 그룹으로 제한한다.
+ * (그룹 id는 순차 정수라, 검증 없이는 임의 그룹 전원에게 푸시를 쏠 수 있음)
+ * null은 "내 모든 그룹" 의미라 그대로 통과 — 푸시 쪽에서 멤버십 기준으로 해석된다.
+ */
+async function sanitizeSharedGroups(userId, sharedGroups) {
+  if (sharedGroups === null || sharedGroups === undefined) return null;
+  if (!Array.isArray(sharedGroups)) return [];
+  const ids = sharedGroups.map((v) => parseInt(v, 10)).filter(Number.isFinite);
+  if (!ids.length) return [];
+  const { data } = await supabaseAdmin
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', userId)
+    .in('group_id', ids);
+  const mine = new Set((data || []).map((m) => m.group_id));
+  return ids.filter((id) => mine.has(id));
+}
 
 // GET /entries — 내 일기 목록
 router.get('/', requireAuth, async (req, res) => {
@@ -27,11 +53,13 @@ router.post('/', requireAuth, async (req, res) => {
   if (!content) return res.status(400).json({ error: 'content는 필수입니다' });
 
   const createdAt = created_at && !isNaN(Date.parse(created_at)) ? created_at : null;
+  // 내가 속한 그룹으로만 공유 대상 제한 (임의 그룹 푸시 스팸 방지)
+  const safeSharedGroups = await sanitizeSharedGroups(req.user.id, shared_groups);
   const { data, error } = await req.supabase
     .from('diary_entries')
     .insert({
       user_id: req.user.id, content, visibility, photo_url,
-      title, tags, dates, persona, folder, shared_groups,
+      title, tags, dates, persona, folder, shared_groups: safeSharedGroups,
       photos: Array.isArray(photos) ? photos.slice(0, 3) : [],
       ...(createdAt ? { created_at: createdAt } : {}),
     })
@@ -42,7 +70,7 @@ router.post('/', requireAuth, async (req, res) => {
 
   // 그룹에 공개한 글이면 멤버들에게 푸시 (응답을 막지 않도록 대기하지 않음)
   if (visibility === 'friends') {
-    notifyGroupsNewEntry({ authorId: req.user.id, groupIds: shared_groups, entryTitle: title });
+    notifyGroupsNewEntry({ authorId: req.user.id, groupIds: safeSharedGroups, entryTitle: title });
   }
 
   // AI 코멘트는 10시간 후 스케줄러가 생성 (scheduler.js COMMENT_DELAY_HOURS)
@@ -177,6 +205,10 @@ router.patch('/:id', requireAuth, async (req, res) => {
   const patch = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) patch[key] = req.body[key];
+  }
+  // 공유 대상은 내가 속한 그룹으로만 제한 (임의 그룹 푸시 스팸 방지)
+  if (patch.shared_groups !== undefined) {
+    patch.shared_groups = await sanitizeSharedGroups(req.user.id, patch.shared_groups);
   }
   // 일기 날짜 변경 (유효한 날짜 문자열일 때만)
   if (req.body.created_at && !isNaN(Date.parse(req.body.created_at))) {
