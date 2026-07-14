@@ -13,7 +13,12 @@ function getOpenAI() {
 }
 
 // 모든 페르소나에 공통으로 적용되는 규칙
-const COMMON_RULES = `[공통 규칙]
+const COMMON_RULES = `[독해 규칙 — 코멘트를 쓰기 전에 먼저]
+- 일기에 등장하는 인물이 누구인지, 각 행동의 주체가 누구인지 정확히 파악해. 한국어는 주어가 자주 생략되니 조사와 인용 표현("~라고 해서", "~한다길래")을 주의 깊게 읽어. (예: "A는 배고프다고 해서 B랑 밥을 먹었는데" — 밥을 먹은 사람이 누구누구인지 문맥으로 판단하고, 확실하지 않으면 단정하지 마.)
+- 누가 무엇을 했는지 애매하면 지어내거나 뭉뚱그리지 말고, 일기에 쓰인 표현을 그대로 빌려 언급해.
+- 일기에 없는 사건·관계·감정을 추측해서 사실처럼 쓰지 마.
+
+[공통 규칙]
 - 일기에 실제로 나온 구체적 사실(사건·사람·감정·사물)을 최소 1개 직접 언급해. 일반론 금지.
 - 다음 같은 막연한 표현은 쓰지 마: "넌 충분해", "잘하고 있어", "다 잘될 거야", "오늘도 고생했어", "넌 소중한 사람이야". 반드시 일기 속 구체적 내용으로 대체해.
 - 2~3문장. 하루 전체를 요약하지 말고, 한 부분에만 반응해.
@@ -254,7 +259,7 @@ async function generateComment(content, persona, meta = {}) {
   const personaPrompt = PERSONA_PROMPTS[persona] || DEFAULT_PROMPT;
   const systemPrompt = `${COMMON_RULES}\n\n${personaPrompt}`;
   const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1-mini',
     temperature: 0.85,
     max_tokens: 320,
     messages: [
@@ -293,7 +298,7 @@ async function generateMonthlyReport(monthLabel, entries) {
     .map((e) => `- ${e.date}: ${e.title ? `${e.title} — ` : ''}${stripPhotoMarkers(e.content)}`)
     .join('\n');
   const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1-mini',
     temperature: 0.7,
     max_tokens: 700,
     messages: [
@@ -368,7 +373,7 @@ async function generateMonthlyAwards(monthLabel, entries, attempt = 0) {
     .join('\n');
   const judges = pickAwardJudges(4); // 9명 풀에서 매번 4명 무작위 (열 때마다 조합이 바뀜)
   const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: 'gpt-4.1-mini',
     temperature: 0.8,
     max_tokens: 1100,
     response_format: { type: 'json_object' },
