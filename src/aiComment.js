@@ -255,16 +255,48 @@ async function isFlagged(text) {
 // Moderation에 걸렸을 때 대신 내보내는 안전한 기본 코멘트
 const SAFE_FALLBACK = '오늘 하루의 기록을 잘 읽었어요. 마음속에 담아둔 이야기를 이렇게 적어낸 것만으로도 충분히 의미 있는 시간이었을 거예요.';
 
+// 1단계(읽기): 코멘트를 쓰기 전에 일기의 사실 관계를 온도 0으로 정확히 정리한다.
+// 창의적인 페르소나 생성(온도 0.85)이 인물·행동 주체를 헷갈리는 것을 막는 근거 자료.
+const FACTS_PROMPT = `일기를 읽고 사실 관계만 정리해. 해석·감상·조언 금지.
+- 글쓴이(나)와 등장인물 각각이 실제로 한 행동을 "누가: 무엇을" 형태로 정리
+- 한국어는 주어가 자주 생략되니 조사와 인용 표현("~라고 해서", "~한다길래")을 주의해서 행동의 주체를 판정
+- 감정·상태는 누구의 것인지 붙여서 정리
+- 문맥으로 판단할 수 없으면 그 항목 끝에 "(불확실)"을 붙여
+- 4줄 이내 개조식, 정리 내용만 출력`;
+
+async function extractFacts(content, meta = {}) {
+  try {
+    const completion = await getOpenAI().chat.completions.create({
+      model: 'gpt-4.1-mini',
+      temperature: 0,
+      max_tokens: 240,
+      messages: [
+        { role: 'system', content: FACTS_PROMPT },
+        { role: 'user', content: buildUserMessage(content, meta) },
+      ],
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (e) {
+    console.warn('[FACTS] 사실 정리 실패, 생략하고 진행:', e.message);
+    return null; // 정리 실패가 코멘트 생성까지 막지 않게
+  }
+}
+
 async function generateComment(content, persona, meta = {}) {
   const personaPrompt = PERSONA_PROMPTS[persona] || DEFAULT_PROMPT;
   const systemPrompt = `${COMMON_RULES}\n\n${personaPrompt}`;
+  // 2단계(쓰기): 1단계 사실 정리를 근거로 페르소나가 코멘트 작성
+  const facts = await extractFacts(content, meta);
+  const userMessage = buildUserMessage(content, meta) + (facts
+    ? `\n\n[사실 관계 정리 — 인물과 행동은 반드시 이 정리를 근거로만 언급하고, (불확실) 표시된 것은 단정하지 마]\n${facts}`
+    : '');
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4.1-mini',
     temperature: 0.85,
     max_tokens: 320,
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: buildUserMessage(content, meta) },
+      { role: 'user', content: userMessage },
     ],
   });
   const text = completion.choices[0].message.content.trim();
