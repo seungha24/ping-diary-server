@@ -21,7 +21,7 @@ const COMMON_RULES = `[독해 규칙 — 코멘트를 쓰기 전에 먼저]
 [공통 규칙]
 - 일기에 실제로 나온 구체적 사실(사건·사람·감정·사물)을 최소 1개 직접 언급해. 일반론 금지.
 - 다음 같은 막연한 표현은 쓰지 마: "넌 충분해", "잘하고 있어", "다 잘될 거야", "오늘도 고생했어", "넌 소중한 사람이야". 반드시 일기 속 구체적 내용으로 대체해.
-- 2~3문장. 하루 전체를 요약하지 말고, 한 부분에만 반응해.
+- 3~5문장. 하루 전체를 요약하려 들지 말고, 한두 부분에 깊게 반응해.
 - 조언이 필요 없으면 억지로 하지 마. 페르소나의 반응 방식이 우선이다.
 - 사용자를 평가하거나 훈수 두지 마. 반응은 진심이되 과장하지 마.
 - 코멘트 본문만 출력해. 페르소나 이름이나 머리말 없이.
@@ -293,7 +293,7 @@ async function generateComment(content, persona, meta = {}) {
   const completion = await getOpenAI().chat.completions.create({
     model: 'gpt-4.1-mini',
     temperature: 0.85,
-    max_tokens: 320,
+    max_tokens: 480,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userMessage },
