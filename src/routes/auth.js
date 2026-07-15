@@ -196,6 +196,44 @@ router.patch('/push-token', requireAuth, async (req, res) => {
     user_metadata: { ...meta, push_tokens: next },
   });
   if (error) return res.status(500).json({ error: error.message });
+
+  // 같은 토큰이 다른 계정에 남아 있으면 제거 — 푸시 토큰은 '기기' 단위라
+  // 마지막으로 로그인한 계정만 가져야 한다 (한 기기 다계정 로그인 시 남의 그룹 알림이 오던 원인)
+  try {
+    let page = 1;
+    for (;;) {
+      const { data } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 1000 });
+      const users = data?.users || [];
+      for (const u of users) {
+        if (u.id === req.user.id) continue;
+        const m = u.user_metadata || {};
+        const list = Array.isArray(m.push_tokens) ? m.push_tokens : [];
+        if (list.includes(push_token)) {
+          await supabaseAdmin.auth.admin.updateUserById(u.id, {
+            user_metadata: { ...m, push_tokens: list.filter((t) => t !== push_token) },
+          });
+        }
+      }
+      if (users.length < 1000) break;
+      page += 1;
+    }
+  } catch (e) {
+    console.warn('푸시 토큰 기기 정리 실패:', e.message);
+  }
+  res.json({ ok: true });
+});
+
+// DELETE /auth/push-token — 로그아웃 시 이 기기의 토큰을 계정에서 해제
+router.delete('/push-token', requireAuth, async (req, res) => {
+  const { push_token } = req.body || {};
+  if (typeof push_token !== 'string') return res.status(400).json({ error: 'push_token이 필요합니다' });
+  const { data: cur } = await supabaseAdmin.auth.admin.getUserById(req.user.id);
+  const meta = cur.user?.user_metadata || {};
+  const tokens = Array.isArray(meta.push_tokens) ? meta.push_tokens : [];
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    user_metadata: { ...meta, push_tokens: tokens.filter((t) => t !== push_token) },
+  });
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
 
