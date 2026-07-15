@@ -80,7 +80,7 @@ router.get('/:id/comments', requireAuth, async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('diary_comments')
-    .select('id, entry_id, user_id, content, created_at')
+    .select('id, entry_id, user_id, content, created_at, parent_id')
     .eq('entry_id', entryId)
     .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
@@ -105,27 +105,50 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
 
   const { entry, allowed } = await canAccessEntry(req.user.id, entryId);
   if (!allowed) return res.status(403).json({ error: '이 일기에 댓글을 쓸 수 없습니다' });
-  if (entry.user_id === req.user.id) {
+
+  // 답글이면 부모 검증 — 깊이는 1단계로 고정 (답글의 답글은 같은 스레드의 루트에 붙임)
+  let parentId = null;
+  if (req.body?.parent_id != null) {
+    const pid = parseInt(req.body.parent_id, 10);
+    if (!Number.isFinite(pid)) return res.status(400).json({ error: '유효한 부모 댓글 id가 필요합니다' });
+    const { data: parent } = await supabaseAdmin
+      .from('diary_comments')
+      .select('id, parent_id, entry_id')
+      .eq('id', pid)
+      .eq('entry_id', entryId)
+      .single();
+    if (!parent) return res.status(404).json({ error: '답글을 달 댓글을 찾을 수 없어요' });
+    parentId = parent.parent_id ?? parent.id;
+  }
+
+  // 내 일기에는 '원댓글'만 금지 — 남이 단 댓글에 답글로 대화를 잇는 건 허용
+  if (entry.user_id === req.user.id && parentId === null) {
     return res.status(403).json({ error: '내 일기에는 댓글을 쓸 수 없어요' });
   }
 
   const { data, error } = await supabaseAdmin
     .from('diary_comments')
-    .insert({ entry_id: entryId, user_id: req.user.id, content })
-    .select('id, entry_id, user_id, content, created_at')
+    .insert({ entry_id: entryId, user_id: req.user.id, content, parent_id: parentId })
+    .select('id, entry_id, user_id, content, created_at, parent_id')
     .single();
   if (error) return res.status(500).json({ error: error.message });
 
   const info = await authorInfo(req.user.id);
-  // 일기 주인에게 푸시 (응답을 막지 않게 비동기로)
-  supabaseAdmin.from('diary_entries').select('title').eq('id', entryId).single()
-    .then(({ data: e }) => notifyEntryComment({
-      ownerId: entry.user_id,
-      commenterName: info.name,
-      entryTitle: e?.title || '',
-      comment: content,
-    }))
-    .catch(() => {});
+  // 푸시: 일기 주인 + (답글이면) 원댓글 작성자에게. 자기 자신에게는 보내지 않는다.
+  // 응답을 막지 않게 비동기로 처리
+  (async () => {
+    const { data: e } = await supabaseAdmin.from('diary_entries').select('title').eq('id', entryId).single();
+    const targets = new Set();
+    if (entry.user_id !== req.user.id) targets.add(entry.user_id);
+    if (parentId !== null) {
+      const { data: parent } = await supabaseAdmin
+        .from('diary_comments').select('user_id').eq('id', parentId).single();
+      if (parent && parent.user_id !== req.user.id) targets.add(parent.user_id);
+    }
+    for (const ownerId of targets) {
+      notifyEntryComment({ ownerId, commenterName: info.name, entryTitle: e?.title || '', comment: content });
+    }
+  })().catch(() => {});
   res.status(201).json({ ...data, author: info.name, author_avatar: info.avatar_url, is_me: true });
 });
 
