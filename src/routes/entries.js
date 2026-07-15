@@ -3,7 +3,7 @@ const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const { requireAuth } = require('../middleware/auth');
 const { generateComment, generateMonthlyReport, generateMonthlyAwards } = require('../aiComment');
-const { notifyGroupsNewEntry } = require('../push');
+const { notifyGroupsNewEntry, notifyEntryComment } = require('../push');
 
 // 멤버십 검증용 관리자 클라이언트 (group_members는 RLS로 잠겨 있음)
 const supabaseAdmin = createClient(
@@ -103,8 +103,11 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
   if (!content) return res.status(400).json({ error: '댓글 내용을 입력해 주세요' });
   if (content.length > 500) return res.status(400).json({ error: '댓글은 500자까지 쓸 수 있어요' });
 
-  const { allowed } = await canAccessEntry(req.user.id, entryId);
+  const { entry, allowed } = await canAccessEntry(req.user.id, entryId);
   if (!allowed) return res.status(403).json({ error: '이 일기에 댓글을 쓸 수 없습니다' });
+  if (entry.user_id === req.user.id) {
+    return res.status(403).json({ error: '내 일기에는 댓글을 쓸 수 없어요' });
+  }
 
   const { data, error } = await supabaseAdmin
     .from('diary_comments')
@@ -114,6 +117,15 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   const info = await authorInfo(req.user.id);
+  // 일기 주인에게 푸시 (응답을 막지 않게 비동기로)
+  supabaseAdmin.from('diary_entries').select('title').eq('id', entryId).single()
+    .then(({ data: e }) => notifyEntryComment({
+      ownerId: entry.user_id,
+      commenterName: info.name,
+      entryTitle: e?.title || '',
+      comment: content,
+    }))
+    .catch(() => {});
   res.status(201).json({ ...data, author: info.name, author_avatar: info.avatar_url, is_me: true });
 });
 

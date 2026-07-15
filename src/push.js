@@ -75,4 +75,32 @@ async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle }) {
   }
 }
 
-module.exports = { notifyGroupsNewEntry };
+/**
+ * 내 일기에 댓글이 달렸을 때 일기 주인에게 푸시를 보낸다.
+ * 실패해도 throw하지 않는다.
+ * @param {{ ownerId: string, commenterName: string, entryTitle?: string, comment: string }} p
+ */
+async function notifyEntryComment({ ownerId, commenterName, entryTitle, comment }) {
+  try {
+    const { data } = await supabaseAdmin.auth.admin.getUserById(ownerId);
+    const tokens = data?.user?.user_metadata?.push_tokens || [];
+    if (!tokens.length) return;
+    const preview = comment.length > 60 ? `${comment.slice(0, 60)}…` : comment;
+    const messages = tokens.map((to) => ({
+      to,
+      sound: 'default',
+      title: entryTitle ? `${commenterName}님이 '${entryTitle}'에 댓글을 남겼어요` : `${commenterName}님이 댓글을 남겼어요`,
+      body: preview,
+    }));
+    const r = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(messages),
+    });
+    if (!r.ok) console.error('댓글 푸시 응답 오류:', r.status, await r.text());
+  } catch (e) {
+    console.error('댓글 푸시 발송 실패:', e.message);
+  }
+}
+
+module.exports = { notifyGroupsNewEntry, notifyEntryComment };
