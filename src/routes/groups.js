@@ -184,13 +184,13 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
   const memberIds = members.map(m => m.user_id).filter((id) => !blocked.includes(id));
   if (memberIds.length === 0) return res.json([]);
 
-  // shared_groups가 null이면 모든 그룹에 공개(기존 동작), 배열이면 이 그룹이 포함된 글만
+  // 이 그룹이 shared_groups에 명시된 글만 (null 레거시는 마이그레이션으로 확정됨 — 새 그룹 가입 시 과거 글 유입 방지)
   const { data, error } = await supabaseAdmin
     .from('diary_entries')
     .select('id, user_id, content, photo_url, photos, created_at, title, tags, dates, persona, ai_comment, shared_groups')
     .in('user_id', memberIds)
     .eq('visibility', 'friends')
-    .or(`shared_groups.is.null,shared_groups.cs.{${groupId}}`)
+    .contains('shared_groups', [groupId])
     .order('created_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });

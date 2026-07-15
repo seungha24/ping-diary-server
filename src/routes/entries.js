@@ -11,13 +11,23 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+/** 작성자가 현재 속한 그룹 id 목록 */
+async function myGroupIds(userId) {
+  const { data } = await supabaseAdmin
+    .from('group_members')
+    .select('group_id')
+    .eq('user_id', userId);
+  return (data || []).map((m) => m.group_id);
+}
+
 /**
  * 클라이언트가 보낸 shared_groups를 작성자가 실제 속한 그룹으로 제한한다.
  * (그룹 id는 순차 정수라, 검증 없이는 임의 그룹 전원에게 푸시를 쏠 수 있음)
- * null은 "내 모든 그룹" 의미라 그대로 통과 — 푸시 쪽에서 멤버십 기준으로 해석된다.
+ * null("전체 공개")은 '작성 시점에 속한 그룹 전체' 스냅샷으로 확정한다 —
+ * null을 그대로 두면 나중에 가입한 그룹에도 과거 일기가 새어 들어간다.
  */
 async function sanitizeSharedGroups(userId, sharedGroups) {
-  if (sharedGroups === null || sharedGroups === undefined) return null;
+  if (sharedGroups === null || sharedGroups === undefined) return myGroupIds(userId);
   if (!Array.isArray(sharedGroups)) return [];
   const ids = sharedGroups.map((v) => parseInt(v, 10)).filter(Number.isFinite);
   if (!ids.length) return [];
