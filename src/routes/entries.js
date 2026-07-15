@@ -40,6 +40,108 @@ async function sanitizeSharedGroups(userId, sharedGroups) {
   return ids.filter((id) => mine.has(id));
 }
 
+/** 이 일기를 볼 수 있는가: 내 글이거나, 나와 공유 그룹이 겹치는 friends 공개 글 */
+async function canAccessEntry(userId, entryId) {
+  const { data: entry } = await supabaseAdmin
+    .from('diary_entries')
+    .select('id, user_id, visibility, shared_groups')
+    .eq('id', entryId)
+    .single();
+  if (!entry) return { entry: null, allowed: false };
+  if (entry.user_id === userId) return { entry, allowed: true };
+  if (entry.visibility !== 'friends' || !Array.isArray(entry.shared_groups) || !entry.shared_groups.length) {
+    return { entry, allowed: false };
+  }
+  const mine = await myGroupIds(userId);
+  const allowed = entry.shared_groups.some((g) => mine.includes(g));
+  return { entry, allowed };
+}
+
+/** user_id → 표시 이름/프사 (댓글 표시용) */
+async function authorInfo(uid) {
+  try {
+    const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
+    const m = u?.user?.user_metadata || {};
+    return {
+      name: m.display_name || m.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버'),
+      avatar_url: m.avatar_url || null,
+    };
+  } catch (_) {
+    return { name: '멤버', avatar_url: null };
+  }
+}
+
+// GET /entries/:id/comments — 댓글 목록 (일기 접근 권한 필요)
+router.get('/:id/comments', requireAuth, async (req, res) => {
+  const entryId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(entryId)) return res.status(400).json({ error: '유효한 일기 id가 필요합니다' });
+  const { allowed } = await canAccessEntry(req.user.id, entryId);
+  if (!allowed) return res.status(403).json({ error: '이 일기의 댓글을 볼 수 없습니다' });
+
+  const { data, error } = await supabaseAdmin
+    .from('diary_comments')
+    .select('id, entry_id, user_id, content, created_at')
+    .eq('entry_id', entryId)
+    .order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+
+  // 작성자 정보는 중복 조회 없이 캐시
+  const infoCache = {};
+  const rows = [];
+  for (const c of data || []) {
+    if (!infoCache[c.user_id]) infoCache[c.user_id] = await authorInfo(c.user_id);
+    rows.push({ ...c, author: infoCache[c.user_id].name, author_avatar: infoCache[c.user_id].avatar_url, is_me: c.user_id === req.user.id });
+  }
+  res.json(rows);
+});
+
+// POST /entries/:id/comments — 댓글 작성
+router.post('/:id/comments', requireAuth, async (req, res) => {
+  const entryId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(entryId)) return res.status(400).json({ error: '유효한 일기 id가 필요합니다' });
+  const content = String(req.body?.content ?? '').trim();
+  if (!content) return res.status(400).json({ error: '댓글 내용을 입력해 주세요' });
+  if (content.length > 500) return res.status(400).json({ error: '댓글은 500자까지 쓸 수 있어요' });
+
+  const { allowed } = await canAccessEntry(req.user.id, entryId);
+  if (!allowed) return res.status(403).json({ error: '이 일기에 댓글을 쓸 수 없습니다' });
+
+  const { data, error } = await supabaseAdmin
+    .from('diary_comments')
+    .insert({ entry_id: entryId, user_id: req.user.id, content })
+    .select('id, entry_id, user_id, content, created_at')
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+
+  const info = await authorInfo(req.user.id);
+  res.status(201).json({ ...data, author: info.name, author_avatar: info.avatar_url, is_me: true });
+});
+
+// DELETE /entries/:id/comments/:commentId — 내 댓글이거나 내 일기의 댓글이면 삭제
+router.delete('/:id/comments/:commentId', requireAuth, async (req, res) => {
+  const entryId = parseInt(req.params.id, 10);
+  const commentId = parseInt(req.params.commentId, 10);
+  if (!Number.isFinite(entryId) || !Number.isFinite(commentId)) {
+    return res.status(400).json({ error: '유효한 id가 필요합니다' });
+  }
+  const { data: comment } = await supabaseAdmin
+    .from('diary_comments')
+    .select('id, user_id, entry_id')
+    .eq('id', commentId)
+    .eq('entry_id', entryId)
+    .single();
+  if (!comment) return res.status(404).json({ error: '댓글을 찾을 수 없습니다' });
+
+  const { entry } = await canAccessEntry(req.user.id, entryId);
+  const isMyComment = comment.user_id === req.user.id;
+  const isMyEntry = entry && entry.user_id === req.user.id;
+  if (!isMyComment && !isMyEntry) return res.status(403).json({ error: '삭제 권한이 없습니다' });
+
+  const { error } = await supabaseAdmin.from('diary_comments').delete().eq('id', commentId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 // GET /entries — 내 일기 목록
 router.get('/', requireAuth, async (req, res) => {
   const { data, error } = await req.supabase
