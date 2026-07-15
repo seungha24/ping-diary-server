@@ -101,6 +101,57 @@ router.post('/join', requireAuth, async (req, res) => {
   res.json({ id: group.id, name: group.name });
 });
 
+// GET /groups/:id/members — 그룹 멤버 목록 (이름·아이디·프사·방장 표시)
+router.get('/:id/members', requireAuth, async (req, res) => {
+  const groupId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(groupId)) return res.status(400).json({ error: '유효한 그룹 id가 필요합니다' });
+
+  // 멤버만 조회 가능
+  const { data: membership } = await req.supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', groupId)
+    .eq('user_id', req.user.id)
+    .single();
+  if (!membership) return res.status(403).json({ error: '그룹 멤버만 조회할 수 있습니다' });
+
+  const { data: group } = await supabaseAdmin
+    .from('groups')
+    .select('created_by')
+    .eq('id', groupId)
+    .single();
+
+  const { data: members, error } = await supabaseAdmin
+    .from('group_members')
+    .select('user_id, created_at')
+    .eq('group_id', groupId)
+    .order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+
+  const result = [];
+  for (const m of members || []) {
+    let name = '멤버';
+    let username = null;
+    let avatar_url = null;
+    try {
+      const { data: u } = await supabaseAdmin.auth.admin.getUserById(m.user_id);
+      const meta = u?.user?.user_metadata || {};
+      name = meta.display_name || meta.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버');
+      username = meta.username || null;
+      avatar_url = meta.avatar_url || null;
+    } catch (_) {}
+    result.push({
+      id: m.user_id,
+      name,
+      username,
+      avatar_url,
+      is_owner: group?.created_by === m.user_id,
+      is_me: req.user.id === m.user_id,
+    });
+  }
+  res.json(result);
+});
+
 // GET /groups/:id/entries — 그룹 일기 조회
 router.get('/:id/entries', requireAuth, async (req, res) => {
   // id는 정수만 허용 (아래 .or() 필터 문자열에 그대로 들어가므로 선검증)
