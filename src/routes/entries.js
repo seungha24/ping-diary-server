@@ -146,7 +146,7 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
       if (parent && parent.user_id !== req.user.id) targets.add(parent.user_id);
     }
     for (const ownerId of targets) {
-      notifyEntryComment({ ownerId, commenterName: info.name, entryTitle: e?.title || '', comment: content });
+      notifyEntryComment({ ownerId, commenterName: info.name, entryTitle: e?.title || '', comment: content, entryId });
     }
   })().catch(() => {});
   res.status(201).json({ ...data, author: info.name, author_avatar: info.avatar_url, is_me: true });
@@ -217,7 +217,7 @@ router.post('/', requireAuth, async (req, res) => {
 
   // 그룹에 공개한 글이면 멤버들에게 푸시 (응답을 막지 않도록 대기하지 않음)
   if (visibility === 'friends') {
-    notifyGroupsNewEntry({ authorId: req.user.id, groupIds: safeSharedGroups, entryTitle: title });
+    notifyGroupsNewEntry({ authorId: req.user.id, groupIds: safeSharedGroups, entryTitle: title, entryId: data.id });
   }
 
   // AI 코멘트는 10시간 후 스케줄러가 생성 (scheduler.js COMMENT_DELAY_HOURS)
@@ -377,6 +377,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
       authorId: req.user.id,
       groupIds: data.shared_groups,
       entryTitle: data.title || entry.title,
+      entryId: data.id,
     });
   }
   res.json(data);

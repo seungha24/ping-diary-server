@@ -9,10 +9,10 @@ const supabaseAdmin = createClient(
 /**
  * 그룹 멤버(작성자 제외)에게 새 글 푸시를 보낸다.
  * 실패해도 throw하지 않는다 — 글 저장 흐름을 막으면 안 되기 때문.
- * @param {{ authorId: string, groupIds: number[]|null, entryTitle?: string }} p
+ * @param {{ authorId: string, groupIds: number[]|null, entryTitle?: string, entryId?: number }} p
  *   groupIds가 null이면 작성자가 속한 모든 그룹에 공개된 것으로 본다.
  */
-async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle }) {
+async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle, entryId }) {
   try {
     let ids = Array.isArray(groupIds) ? groupIds.map(Number).filter(Number.isFinite) : null;
     if (!ids) {
@@ -56,6 +56,8 @@ async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle }) {
           sound: 'default',
           title: `${gname}에 새 p!ng이 도착했어요`,
           body: entryTitle ? `${authorName}님 · ${entryTitle}` : `${authorName}님이 새 일기를 올렸어요`,
+          // 알림 탭 → 해당 글로 이동 (앱의 알림 응답 리스너가 사용)
+          data: { type: 'group_entry', entryId: entryId ?? null, groupId },
         });
       }
     }
@@ -78,9 +80,9 @@ async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle }) {
 /**
  * 내 일기에 댓글이 달렸을 때 일기 주인에게 푸시를 보낸다.
  * 실패해도 throw하지 않는다.
- * @param {{ ownerId: string, commenterName: string, entryTitle?: string, comment: string }} p
+ * @param {{ ownerId: string, commenterName: string, entryTitle?: string, comment: string, entryId?: number }} p
  */
-async function notifyEntryComment({ ownerId, commenterName, entryTitle, comment }) {
+async function notifyEntryComment({ ownerId, commenterName, entryTitle, comment, entryId }) {
   try {
     const { data } = await supabaseAdmin.auth.admin.getUserById(ownerId);
     const tokens = data?.user?.user_metadata?.push_tokens || [];
@@ -91,6 +93,7 @@ async function notifyEntryComment({ ownerId, commenterName, entryTitle, comment 
       sound: 'default',
       title: entryTitle ? `${commenterName}님이 '${entryTitle}'에 댓글을 남겼어요` : `${commenterName}님이 댓글을 남겼어요`,
       body: preview,
+      data: { type: 'comment', entryId: entryId ?? null },
     }));
     const r = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
