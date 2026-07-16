@@ -71,6 +71,78 @@ async function authorInfo(uid) {
   }
 }
 
+// GET /entries/comments/inbox — 알림창용: 내 일기에 달린 댓글 + 내 댓글에 달린 답글 (최신 30개)
+// 주의: '/:id/comments'보다 먼저 선언해야 한다
+router.get('/comments/inbox', requireAuth, async (req, res) => {
+  const uid = req.user.id;
+
+  // 내 일기 id·제목 (알림 본문에 제목 표기용)
+  const { data: myEntries, error: e1 } = await supabaseAdmin
+    .from('diary_entries')
+    .select('id, title')
+    .eq('user_id', uid);
+  if (e1) return res.status(500).json({ error: e1.message });
+  const titleById = {};
+  for (const r of myEntries || []) titleById[r.id] = r.title;
+  const entryIds = Object.keys(titleById).map(Number);
+
+  // 1) 내 일기에 남이 단 댓글
+  let onMine = [];
+  if (entryIds.length) {
+    const { data } = await supabaseAdmin
+      .from('diary_comments')
+      .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
+      .in('entry_id', entryIds)
+      .neq('user_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    onMine = data || [];
+  }
+
+  // 2) 남의 일기에서 내 댓글에 달린 답글
+  const { data: myComments } = await supabaseAdmin
+    .from('diary_comments').select('id').eq('user_id', uid);
+  const myCommentIds = (myComments || []).map((r) => r.id);
+  let replies = [];
+  if (myCommentIds.length) {
+    const { data } = await supabaseAdmin
+      .from('diary_comments')
+      .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
+      .in('parent_id', myCommentIds)
+      .neq('user_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    replies = data || [];
+  }
+
+  // 합치기 — 내 일기의 내 댓글에 달린 답글은 양쪽에 잡히므로 중복 제거 후 최신순 30개
+  const seen = new Set();
+  const merged = [...onMine, ...replies]
+    .filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, 30);
+
+  // 작성자 표시 정보 + 일기 제목 동봉 (남의 일기 제목은 개별 조회)
+  const infoCache = {};
+  const rows = [];
+  for (const c of merged) {
+    if (!infoCache[c.user_id]) infoCache[c.user_id] = await authorInfo(c.user_id);
+    let title = titleById[c.entry_id];
+    if (title === undefined) {
+      const { data: e } = await supabaseAdmin
+        .from('diary_entries').select('title').eq('id', c.entry_id).single();
+      title = e?.title || '';
+    }
+    rows.push({
+      ...c,
+      author: infoCache[c.user_id].name,
+      author_avatar: infoCache[c.user_id].avatar_url,
+      entry_title: title || '',
+    });
+  }
+  res.json(rows);
+});
+
 // GET /entries/:id/comments — 댓글 목록 (일기 접근 권한 필요)
 router.get('/:id/comments', requireAuth, async (req, res) => {
   const entryId = parseInt(req.params.id, 10);
