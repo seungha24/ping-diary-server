@@ -166,13 +166,16 @@ router.get('/:id/comments', requireAuth, async (req, res) => {
     visible = visible.filter((c) => c.group_id == null || mine.includes(c.group_id));
   }
 
-  // 작성자 정보는 중복 조회 없이 캐시
+  // 작성자 정보는 중복 없이 모아 병렬 조회
+  const uids = [...new Set(visible.map((c) => c.user_id))];
   const infoCache = {};
-  const rows = [];
-  for (const c of visible) {
-    if (!infoCache[c.user_id]) infoCache[c.user_id] = await authorInfo(c.user_id);
-    rows.push({ ...c, author: infoCache[c.user_id].name, author_avatar: infoCache[c.user_id].avatar_url, is_me: c.user_id === req.user.id });
-  }
+  await Promise.all(uids.map(async (uid) => { infoCache[uid] = await authorInfo(uid); }));
+  const rows = visible.map((c) => ({
+    ...c,
+    author: infoCache[c.user_id].name,
+    author_avatar: infoCache[c.user_id].avatar_url,
+    is_me: c.user_id === req.user.id,
+  }));
   res.json(rows);
 });
 

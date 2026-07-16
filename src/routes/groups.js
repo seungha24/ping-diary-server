@@ -34,14 +34,13 @@ router.get('/', requireAuth, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   // 각 그룹의 멤버 수 계산 (RLS 우회 위해 관리자 클라이언트 사용)
-  const result = [];
-  for (const g of groups) {
+  const result = await Promise.all(groups.map(async (g) => {
     const { count } = await supabaseAdmin
       .from('group_members')
       .select('id', { count: 'exact', head: true })
       .eq('group_id', g.id);
-    result.push({ ...g, member_count: count ?? 1 });
-  }
+    return { ...g, member_count: count ?? 1 };
+  }));
   res.json(result);
 });
 
@@ -128,8 +127,7 @@ router.get('/:id/members', requireAuth, async (req, res) => {
     .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
 
-  const result = [];
-  for (const m of members || []) {
+  const result = await Promise.all((members || []).map(async (m) => {
     let name = '멤버';
     let username = null;
     let avatar_url = null;
@@ -140,15 +138,15 @@ router.get('/:id/members', requireAuth, async (req, res) => {
       username = meta.username || null;
       avatar_url = meta.avatar_url || null;
     } catch (_) {}
-    result.push({
+    return {
       id: m.user_id,
       name,
       username,
       avatar_url,
       is_owner: group?.created_by === m.user_id,
       is_me: req.user.id === m.user_id,
-    });
-  }
+    };
+  }));
   res.json(result);
 });
 
@@ -198,14 +196,15 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
   // 작성자 표시용: user_id → 표시이름/닉네임(없으면 이메일 앞부분) + 프로필 사진
   const authorMap = {};
   const avatarMap = {};
-  for (const uid of memberIds) {
+  // 순차 조회는 멤버 수 × ~100ms씩 걸려 피드 로딩을 늘어뜨린다 — 병렬로
+  await Promise.all(memberIds.map(async (uid) => {
     try {
       const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
       const m = u?.user?.user_metadata || {};
       authorMap[uid] = m.display_name || m.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버');
       avatarMap[uid] = m.avatar_url || null;
     } catch (_) {}
-  }
+  }));
   // 카드에 표시할 댓글 수 — 이 그룹에서 보이는 댓글(이 그룹 소속 + 레거시 공용)만 집계
   const entryIds = (data || []).map((e) => e.id);
   const commentCount = {};

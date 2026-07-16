@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const sharp = require('sharp');
 const { requireAuth } = require('../middleware/auth');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
@@ -25,13 +26,30 @@ const upload = multer({
 router.post('/', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '파일이 없습니다' });
 
-  const ext = req.file.mimetype.includes('png') ? 'png' : req.file.mimetype.includes('gif') ? 'gif' : 'jpg';
+  // 원본(아이폰 사진 수 MB~20MB)을 그대로 저장하면 피드 로딩이 수 초씩 걸린다 —
+  // 긴 변 1600px·JPEG 82%로 리사이즈해 보통 100~400KB로 줄인다. (GIF는 애니메이션 보존 위해 원본 유지)
+  let buffer = req.file.buffer;
+  let contentType = req.file.mimetype;
+  let ext = contentType.includes('png') ? 'png' : contentType.includes('gif') ? 'gif' : 'jpg';
+  if (ext !== 'gif') {
+    try {
+      buffer = await sharp(req.file.buffer)
+        .rotate() // EXIF 회전 반영 (리사이즈하면 EXIF가 사라지므로 픽셀에 구움)
+        .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 82, mozjpeg: true })
+        .toBuffer();
+      contentType = 'image/jpeg';
+      ext = 'jpg';
+    } catch (e) {
+      console.warn('[UPLOAD] 리사이즈 실패, 원본 저장:', e.message);
+    }
+  }
   const fileName = `${req.user.id}_${Date.now()}.${ext}`;
 
   const { error } = await supabaseAdmin.storage
     .from('photos')
-    .upload(fileName, req.file.buffer, {
-      contentType: req.file.mimetype,
+    .upload(fileName, buffer, {
+      contentType,
       upsert: false,
     });
 
