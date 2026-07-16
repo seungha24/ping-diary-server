@@ -201,7 +201,7 @@ router.delete('/:id/comments/:commentId', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /entries — 내 일기 목록
+// GET /entries — 내 일기 목록 (댓글 수 포함 — 주인은 모든 그룹의 댓글을 셈)
 router.get('/', requireAuth, async (req, res) => {
   const { data, error } = await req.supabase
     .from('diary_entries')
@@ -209,7 +209,17 @@ router.get('/', requireAuth, async (req, res) => {
     .order('created_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+
+  const ids = (data || []).map((e) => e.id);
+  const commentCount = {};
+  if (ids.length) {
+    const { data: cs } = await supabaseAdmin
+      .from('diary_comments')
+      .select('entry_id')
+      .in('entry_id', ids);
+    for (const c of cs || []) commentCount[c.entry_id] = (commentCount[c.entry_id] || 0) + 1;
+  }
+  res.json((data || []).map((e) => ({ ...e, comment_count: commentCount[e.id] || 0 })));
 });
 
 // POST /entries — 일기 작성

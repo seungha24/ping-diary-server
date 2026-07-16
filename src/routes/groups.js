@@ -206,8 +206,24 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
       avatarMap[uid] = m.avatar_url || null;
     } catch (_) {}
   }
+  // 카드에 표시할 댓글 수 — 이 그룹에서 보이는 댓글(이 그룹 소속 + 레거시 공용)만 집계
+  const entryIds = (data || []).map((e) => e.id);
+  const commentCount = {};
+  if (entryIds.length) {
+    const { data: cs } = await supabaseAdmin
+      .from('diary_comments')
+      .select('entry_id, group_id')
+      .in('entry_id', entryIds);
+    for (const c of cs || []) {
+      if (c.group_id == null || c.group_id === groupId) {
+        commentCount[c.entry_id] = (commentCount[c.entry_id] || 0) + 1;
+      }
+    }
+  }
+
   const enriched = (data || []).map((e) => ({
     ...e,
+    comment_count: commentCount[e.id] || 0,
     author: authorMap[e.user_id] || '멤버',
     author_avatar: avatarMap[e.user_id] || null,
   }));
