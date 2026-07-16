@@ -29,6 +29,7 @@ async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle, entryId })
     ]);
     const authorMeta = authorRes?.data?.user?.user_metadata || {};
     const authorName = authorMeta.display_name
+      || authorMeta.nickname // 카카오/네이버 로그인은 닉네임만 있는 경우가 많다
       || (authorRes?.data?.user?.email || '').split('@')[0] || '멤버';
     const nameById = new Map((groups || []).map((g) => [g.id, g.name]));
 

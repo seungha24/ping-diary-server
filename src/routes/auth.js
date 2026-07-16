@@ -396,7 +396,7 @@ router.get('/kakao/callback', async (req, res) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { provider: 'kakao', kakao_id: kakaoId, nickname },
+      user_metadata: { provider: 'kakao', kakao_id: kakaoId, nickname, display_name: nickname },
     });
 
     // 4) 결정적 비밀번호로 로그인해 Supabase 세션 발급
@@ -474,7 +474,7 @@ router.get('/naver/callback', async (req, res) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { provider: 'naver', naver_id: naverId, nickname },
+      user_metadata: { provider: 'naver', naver_id: naverId, nickname, display_name: nickname },
     });
 
     // 4) 결정적 비밀번호로 로그인해 세션 발급
