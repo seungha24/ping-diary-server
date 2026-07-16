@@ -80,15 +80,24 @@ router.get('/:id/comments', requireAuth, async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('diary_comments')
-    .select('id, entry_id, user_id, content, created_at, parent_id')
+    .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
     .eq('entry_id', entryId)
     .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
 
+  // 그룹 스코프: 일기 주인은 전부, 그 외에는 자기가 속한 그룹의 댓글만
+  // (group_id가 null인 레거시 댓글은 기존처럼 모두에게 보임)
+  let visible = data || [];
+  const { entry: entryRow } = await canAccessEntry(req.user.id, entryId);
+  if (entryRow && entryRow.user_id !== req.user.id) {
+    const mine = await myGroupIds(req.user.id);
+    visible = visible.filter((c) => c.group_id == null || mine.includes(c.group_id));
+  }
+
   // 작성자 정보는 중복 조회 없이 캐시
   const infoCache = {};
   const rows = [];
-  for (const c of data || []) {
+  for (const c of visible) {
     if (!infoCache[c.user_id]) infoCache[c.user_id] = await authorInfo(c.user_id);
     rows.push({ ...c, author: infoCache[c.user_id].name, author_avatar: infoCache[c.user_id].avatar_url, is_me: c.user_id === req.user.id });
   }
@@ -121,6 +130,21 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
     parentId = parent.parent_id ?? parent.id;
   }
 
+  // 댓글이 속할 그룹 결정 — 답글은 루트 댓글의 그룹을 상속, 원댓글은 요청값(검증) 또는 추론
+  let groupId = null;
+  if (parentId !== null) {
+    const { data: root } = await supabaseAdmin
+      .from('diary_comments').select('group_id').eq('id', parentId).single();
+    groupId = root?.group_id ?? null;
+  } else {
+    const mine = await myGroupIds(req.user.id);
+    const shared = Array.isArray(entry.shared_groups) ? entry.shared_groups : [];
+    const candidates = shared.filter((g) => mine.includes(g));
+    const requested = req.body?.group_id != null ? parseInt(req.body.group_id, 10) : null;
+    if (requested != null && candidates.includes(requested)) groupId = requested;
+    else groupId = candidates[0] ?? null; // 구버전 앱(group_id 미전송) 호환: 겹치는 첫 그룹
+  }
+
   // 내 일기에는 '원댓글'만 금지 — 남이 단 댓글에 답글로 대화를 잇는 건 허용
   if (entry.user_id === req.user.id && parentId === null) {
     return res.status(403).json({ error: '내 일기에는 댓글을 쓸 수 없어요' });
@@ -128,8 +152,8 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('diary_comments')
-    .insert({ entry_id: entryId, user_id: req.user.id, content, parent_id: parentId })
-    .select('id, entry_id, user_id, content, created_at, parent_id')
+    .insert({ entry_id: entryId, user_id: req.user.id, content, parent_id: parentId, group_id: groupId })
+    .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
     .single();
   if (error) return res.status(500).json({ error: error.message });
 
