@@ -42,9 +42,10 @@ async function generatePendingCommentsInner() {
   for (const entry of entries) {
     try {
       const aiComment = await generateComment(entry.content, entry.persona, { title: entry.title, tags: entry.tags });
+      const cache = entry.ai_comments && typeof entry.ai_comments === 'object' ? entry.ai_comments : {};
       await supabaseAdmin
         .from('diary_entries')
-        .update({ ai_comment: aiComment })
+        .update({ ai_comment: aiComment, ai_comments: { ...cache, [entry.persona]: aiComment } })
         .eq('id', entry.id);
 
       console.log(`일기 #${entry.id} 코멘트 생성 완료`);

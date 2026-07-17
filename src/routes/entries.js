@@ -430,10 +430,14 @@ router.post('/:id/comment', requireAuth, async (req, res) => {
     : entry.persona;
 
   try {
-    const aiComment = await generateComment(entry.content, persona, { title: entry.title, tags: entry.tags });
+    // 페르소나별 p0ng 캐시 — 이미 이 말투로 받아봤다면 다시 생성하지 않고 그대로 복원
+    // (페르소나 1→2→1로 오가도 1의 멘트가 유지되고, 생성 비용도 아낀다)
+    const cache = entry.ai_comments && typeof entry.ai_comments === 'object' ? entry.ai_comments : {};
+    const aiComment = cache[persona]
+      || await generateComment(entry.content, persona, { title: entry.title, tags: entry.tags });
     const { data, error } = await req.supabase
       .from('diary_entries')
-      .update({ ai_comment: aiComment, persona })
+      .update({ ai_comment: aiComment, persona, ai_comments: { ...cache, [persona]: aiComment } })
       .eq('id', entry.id)
       .select()
       .single();
