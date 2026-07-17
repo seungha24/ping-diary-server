@@ -101,7 +101,7 @@ router.get('/comments/inbox', requireAuth, async (req, res) => {
 
   // 2) 남의 일기에서 내 댓글에 달린 답글
   const { data: myComments } = await supabaseAdmin
-    .from('diary_comments').select('id').eq('user_id', uid);
+    .from('diary_comments').select('id, entry_id, created_at').eq('user_id', uid);
   const myCommentIds = (myComments || []).map((r) => r.id);
   let replies = [];
   if (myCommentIds.length) {
@@ -115,9 +115,40 @@ router.get('/comments/inbox', requireAuth, async (req, res) => {
     replies = data || [];
   }
 
-  // 합치기 — 내 일기의 내 댓글에 달린 답글은 양쪽에 잡히므로 중복 제거 후 최신순 30개
+  // 3) 내가 댓글 단 남의 일기에 다른 멤버가 이어서 단 댓글 (스레드 참여 알림)
+  // 내가 처음 댓글 단 시각 이후의 것만 — 그 전 댓글은 댓글 달 때 이미 봤다
+  const firstMineByEntry = {};
+  for (const c of myComments || []) {
+    if (titleById[c.entry_id] !== undefined) continue; // 내 일기는 1)에서 커버
+    if (!firstMineByEntry[c.entry_id] || c.created_at < firstMineByEntry[c.entry_id]) {
+      firstMineByEntry[c.entry_id] = c.created_at;
+    }
+  }
+  const threadEntryIds = Object.keys(firstMineByEntry).map(Number);
+  let thread = [];
+  if (threadEntryIds.length) {
+    const { data } = await supabaseAdmin
+      .from('diary_comments')
+      .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
+      .in('entry_id', threadEntryIds)
+      .neq('user_id', uid)
+      .order('created_at', { ascending: false })
+      .limit(30);
+    // 그룹 스코프: 내가 속한 그룹의 댓글만 (레거시 null은 모두에게 보임)
+    const mineGroups = await myGroupIds(uid);
+    thread = (data || []).filter(
+      (c) => c.created_at > firstMineByEntry[c.entry_id]
+        && (c.group_id == null || mineGroups.includes(c.group_id))
+    );
+  }
+
+  // 합치기 — 겹치는 항목(내 댓글의 답글이 스레드에도 잡히는 등)은 앞선 이유가 우선
   const seen = new Set();
-  const merged = [...onMine, ...replies]
+  const merged = [
+    ...onMine.map((c) => ({ ...c, reason: 'on_my_entry' })),
+    ...replies.map((c) => ({ ...c, reason: 'reply' })),
+    ...thread.map((c) => ({ ...c, reason: 'thread' })),
+  ]
     .filter((c) => (seen.has(c.id) ? false : (seen.add(c.id), true)))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     .slice(0, 30);
@@ -152,7 +183,7 @@ router.get('/:id/comments', requireAuth, async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('diary_comments')
-    .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
+    .select('id, entry_id, user_id, content, created_at, parent_id, group_id, photo_url')
     .eq('entry_id', entryId)
     .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
@@ -184,7 +215,15 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
   const entryId = parseInt(req.params.id, 10);
   if (!Number.isFinite(entryId)) return res.status(400).json({ error: '유효한 일기 id가 필요합니다' });
   const content = String(req.body?.content ?? '').trim();
-  if (!content) return res.status(400).json({ error: '댓글 내용을 입력해 주세요' });
+  // 사진 첨부: 우리 스토리지 공개 URL만 허용 (임의 외부 이미지 주입 방지)
+  let photoUrl = null;
+  if (typeof req.body?.photo_url === 'string' && req.body.photo_url.trim()) {
+    const u = req.body.photo_url.trim();
+    const allowedPrefix = `${process.env.SUPABASE_URL}/storage/v1/object/public/photos/`;
+    if (!u.startsWith(allowedPrefix)) return res.status(400).json({ error: '유효한 사진이 아니에요' });
+    photoUrl = u.slice(0, 500);
+  }
+  if (!content && !photoUrl) return res.status(400).json({ error: '댓글 내용을 입력해 주세요' });
   if (content.length > 500) return res.status(400).json({ error: '댓글은 500자까지 쓸 수 있어요' });
 
   const { entry, allowed } = await canAccessEntry(req.user.id, entryId);
@@ -227,8 +266,8 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from('diary_comments')
-    .insert({ entry_id: entryId, user_id: req.user.id, content, parent_id: parentId, group_id: groupId })
-    .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
+    .insert({ entry_id: entryId, user_id: req.user.id, content, parent_id: parentId, group_id: groupId, photo_url: photoUrl })
+    .select('id, entry_id, user_id, content, created_at, parent_id, group_id, photo_url')
     .single();
   if (error) return res.status(500).json({ error: error.message });
 
@@ -244,8 +283,19 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
         .from('diary_comments').select('user_id').eq('id', parentId).single();
       if (parent && parent.user_id !== req.user.id) targets.add(parent.user_id);
     }
+    // 이 일기에서 대화에 참여한(댓글 단) 멤버들에게도 — 그룹 댓글이면 그 그룹 멤버로 제한
+    const { data: participants } = await supabaseAdmin
+      .from('diary_comments').select('user_id').eq('entry_id', entryId);
+    let partIds = [...new Set((participants || []).map((p) => p.user_id))]
+      .filter((id) => id !== req.user.id);
+    if (groupId != null && partIds.length) {
+      const { data: members } = await supabaseAdmin
+        .from('group_members').select('user_id').eq('group_id', groupId).in('user_id', partIds);
+      partIds = (members || []).map((m) => m.user_id);
+    }
+    partIds.forEach((id) => targets.add(id));
     for (const ownerId of targets) {
-      notifyEntryComment({ ownerId, commenterName: info.name, entryTitle: e?.title || '', comment: content, entryId });
+      notifyEntryComment({ ownerId, commenterName: info.name, entryTitle: e?.title || '', comment: content || '(사진)', entryId });
     }
   })().catch(() => {});
   res.status(201).json({ ...data, author: info.name, author_avatar: info.avatar_url, is_me: true });
