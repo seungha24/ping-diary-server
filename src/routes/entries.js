@@ -181,11 +181,19 @@ router.get('/:id/comments', requireAuth, async (req, res) => {
   const { allowed } = await canAccessEntry(req.user.id, entryId);
   if (!allowed) return res.status(403).json({ error: '이 일기의 댓글을 볼 수 없습니다' });
 
-  const { data, error } = await supabaseAdmin
+  // photo_url 컬럼 미적용 DB(마이그레이션 전) 호환: 스키마 에러면 없이 재시도
+  let { data, error } = await supabaseAdmin
     .from('diary_comments')
     .select('id, entry_id, user_id, content, created_at, parent_id, group_id, photo_url')
     .eq('entry_id', entryId)
     .order('created_at', { ascending: true });
+  if (error && /photo_url/.test(error.message)) {
+    ({ data, error } = await supabaseAdmin
+      .from('diary_comments')
+      .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
+      .eq('entry_id', entryId)
+      .order('created_at', { ascending: true }));
+  }
   if (error) return res.status(500).json({ error: error.message });
 
   // 그룹 스코프: 일기 주인은 전부, 그 외에는 자기가 속한 그룹의 댓글만
@@ -264,11 +272,19 @@ router.post('/:id/comments', requireAuth, async (req, res) => {
     return res.status(403).json({ error: '내 일기에는 댓글을 쓸 수 없어요' });
   }
 
-  const { data, error } = await supabaseAdmin
+  // photo_url 컬럼 미적용 DB(마이그레이션 전) 호환: 스키마 에러면 없이 재시도
+  let { data, error } = await supabaseAdmin
     .from('diary_comments')
     .insert({ entry_id: entryId, user_id: req.user.id, content, parent_id: parentId, group_id: groupId, photo_url: photoUrl })
     .select('id, entry_id, user_id, content, created_at, parent_id, group_id, photo_url')
     .single();
+  if (error && /photo_url/.test(error.message)) {
+    ({ data, error } = await supabaseAdmin
+      .from('diary_comments')
+      .insert({ entry_id: entryId, user_id: req.user.id, content, parent_id: parentId, group_id: groupId })
+      .select('id, entry_id, user_id, content, created_at, parent_id, group_id')
+      .single());
+  }
   if (error) return res.status(500).json({ error: error.message });
 
   const info = await authorInfo(req.user.id);
