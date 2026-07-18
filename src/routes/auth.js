@@ -16,12 +16,13 @@ const supabaseAdmin = createClient(
 // Supabase 기본 카카오 provider는 이메일 scope를 강제 요청하는데, 이메일은
 // 카카오 비즈니스 앱 전환이 있어야 받을 수 있다. 그래서 닉네임(profile_nickname)만
 // 요청하는 OAuth를 직접 구현해 Supabase 세션을 발급한다.
-const KAKAO_REST_KEY = process.env.KAKAO_REST_KEY;
-// 카카오에서 Client Secret '사용함'일 때 필요 — 반드시 env로만 (하드코딩 유출 사고로 재발급됨, 7/18)
+// REST API 키는 로그인 URL에 노출되는 공개 식별자 — 코드에 둬도 안전 (secret과 다름)
+const KAKAO_REST_KEY = process.env.KAKAO_REST_KEY || 'dda0e9624bcabd9b2bacdd9f9109878f';
+// Client Secret은 반드시 env로만 (하드코딩 유출 사고로 재발급됨, 7/18)
 const KAKAO_CLIENT_SECRET = process.env.KAKAO_CLIENT_SECRET;
-if (!KAKAO_REST_KEY || !KAKAO_CLIENT_SECRET) {
+if (!KAKAO_CLIENT_SECRET) {
   // 서버 전체를 죽이지 않고 카카오 로그인만 실패하도록 경고만 남긴다
-  console.warn('[AUTH] KAKAO_REST_KEY/KAKAO_CLIENT_SECRET 환경변수 누락 — 카카오 로그인이 동작하지 않습니다');
+  console.warn('[AUTH] KAKAO_CLIENT_SECRET 환경변수 누락 — 카카오 로그인이 동작하지 않습니다');
 }
 const SERVER_URL = process.env.SERVER_URL || 'https://ping-diary-server-production.up.railway.app';
 const KAKAO_REDIRECT_URI = `${SERVER_URL}/auth/kakao/callback`;
