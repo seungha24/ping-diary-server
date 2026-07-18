@@ -36,6 +36,8 @@ app.get('/health', (req, res) => res.json({
   status: 'ok',
   // 환경변수 주입 여부만 노출 (값은 절대 노출하지 않음) — Railway 주입 문제 진단용
   env: { kakao_secret: !!process.env.KAKAO_CLIENT_SECRET, kakao_rest: !!process.env.KAKAO_REST_KEY },
+  // 이름이 미묘하게 다른 채로 들어오는지 확인 (이름만 노출, 값 아님)
+  kakao_keys: Object.keys(process.env).filter((k) => /kakao/i.test(k)).map((k) => JSON.stringify(k)),
 }));
 
 app.use('/auth', require('./routes/auth'));
