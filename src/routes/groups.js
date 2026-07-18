@@ -6,6 +6,9 @@ const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 // RLS를 우회해 그룹 전체 멤버를 집계하기 위한 관리자 클라이언트
+// 그룹당 최대 인원 — 초대코드 유출 시 피해 제한 (가족·친구·소모임엔 충분한 크기)
+const GROUP_MEMBER_LIMIT = 30;
+
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
@@ -88,6 +91,16 @@ router.post('/join', requireAuth, async (req, res) => {
     .single();
 
   if (!group) return res.status(404).json({ error: '유효하지 않은 초대 코드입니다' });
+
+  // 정원 확인 — 초대코드가 유출돼도 무한정 불어나지 않게 (이미 멤버면 멱등 재참여로 통과)
+  const { data: members } = await supabaseAdmin
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', group.id);
+  const alreadyMember = (members || []).some((m) => m.user_id === req.user.id);
+  if (!alreadyMember && (members || []).length >= GROUP_MEMBER_LIMIT) {
+    return res.status(403).json({ error: `그룹 정원(${GROUP_MEMBER_LIMIT}명)이 가득 찼어요.` });
+  }
 
   // 멱등 참여: unique(group_id, user_id) 제약 + upsert라 동시 요청(더블탭)에도 중복 행 없음
   const { error: joinError } = await supabaseAdmin
