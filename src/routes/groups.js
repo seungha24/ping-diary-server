@@ -7,7 +7,7 @@ require('dotenv').config();
 
 // RLS를 우회해 그룹 전체 멤버를 집계하기 위한 관리자 클라이언트
 // 그룹당 최대 인원 — 초대코드 유출 시 피해 제한 (가족·친구·소모임엔 충분한 크기)
-const GROUP_MEMBER_LIMIT = 30;
+const GROUP_MEMBER_LIMIT = 15;
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL,
