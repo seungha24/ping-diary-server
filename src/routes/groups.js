@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
+const { getUserInfoCached } = require('../userCache');
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
@@ -34,14 +35,14 @@ router.get('/', requireAuth, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   // 각 그룹의 멤버 수 계산 (RLS 우회 위해 관리자 클라이언트 사용)
-  const result = await Promise.all(groups.map(async (g) => {
-    const { count } = await supabaseAdmin
-      .from('group_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('group_id', g.id);
-    return { ...g, member_count: count ?? 1 };
-  }));
-  res.json(result);
+  // 멤버 수는 한 번에 조회해 그룹별 집계 (그룹 수만큼 왕복하던 것 제거)
+  const { data: allMembers } = await supabaseAdmin
+    .from('group_members')
+    .select('group_id')
+    .in('group_id', ids);
+  const countMap = {};
+  for (const m of allMembers || []) countMap[m.group_id] = (countMap[m.group_id] || 0) + 1;
+  res.json(groups.map((g) => ({ ...g, member_count: countMap[g.id] ?? 1 })));
 });
 
 // POST /groups — 그룹 생성
@@ -128,21 +129,12 @@ router.get('/:id/members', requireAuth, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   const result = await Promise.all((members || []).map(async (m) => {
-    let name = '멤버';
-    let username = null;
-    let avatar_url = null;
-    try {
-      const { data: u } = await supabaseAdmin.auth.admin.getUserById(m.user_id);
-      const meta = u?.user?.user_metadata || {};
-      name = meta.display_name || meta.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버');
-      username = meta.username || null;
-      avatar_url = meta.avatar_url || null;
-    } catch (_) {}
+    const info = await getUserInfoCached(m.user_id);
     return {
       id: m.user_id,
-      name,
-      username,
-      avatar_url,
+      name: info.name,
+      username: info.username,
+      avatar_url: info.avatar_url,
       is_owner: group?.created_by === m.user_id,
       is_me: req.user.id === m.user_id,
     };
@@ -196,14 +188,11 @@ router.get('/:id/entries', requireAuth, async (req, res) => {
   // 작성자 표시용: user_id → 표시이름/닉네임(없으면 이메일 앞부분) + 프로필 사진
   const authorMap = {};
   const avatarMap = {};
-  // 순차 조회는 멤버 수 × ~100ms씩 걸려 피드 로딩을 늘어뜨린다 — 병렬로
+  // 사용자 정보는 인메모리 캐시(5분)로 — 두 번째 요청부터는 왕복 없음
   await Promise.all(memberIds.map(async (uid) => {
-    try {
-      const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
-      const m = u?.user?.user_metadata || {};
-      authorMap[uid] = m.display_name || m.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버');
-      avatarMap[uid] = m.avatar_url || null;
-    } catch (_) {}
+    const info = await getUserInfoCached(uid);
+    authorMap[uid] = info.name;
+    avatarMap[uid] = info.avatar_url;
   }));
   // 카드에 표시할 댓글 수 — 이 그룹에서 보이는 댓글(이 그룹 소속 + 레거시 공용)만 집계
   const entryIds = (data || []).map((e) => e.id);

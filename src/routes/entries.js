@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const { requireAuth } = require('../middleware/auth');
+const { getUserInfoCached } = require('../userCache');
 const { generateComment, generateMonthlyReport, generateMonthlyAwards } = require('../aiComment');
 const { notifyGroupsNewEntry, notifyEntryComment } = require('../push');
 
@@ -57,18 +58,9 @@ async function canAccessEntry(userId, entryId) {
   return { entry, allowed };
 }
 
-/** user_id → 표시 이름/프사 (댓글 표시용) */
+/** user_id → 표시 이름/프사 (댓글 표시용) — 인메모리 캐시 사용 */
 async function authorInfo(uid) {
-  try {
-    const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
-    const m = u?.user?.user_metadata || {};
-    return {
-      name: m.display_name || m.nickname || (u?.user?.email ? u.user.email.split('@')[0] : '멤버'),
-      avatar_url: m.avatar_url || null,
-    };
-  } catch (_) {
-    return { name: '멤버', avatar_url: null };
-  }
+  return getUserInfoCached(uid);
 }
 
 // GET /entries/comments/inbox — 알림창용: 내 일기에 달린 댓글 + 내 댓글에 달린 답글 (최신 30개)

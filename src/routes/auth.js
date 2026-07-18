@@ -4,6 +4,7 @@ const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const supabase = require('../supabase');
 const { requireAuth } = require('../middleware/auth');
+const { invalidateUserInfo } = require('../userCache');
 
 // 서비스 키 클라이언트 (계정 삭제 등 관리 작업용, RLS 우회)
 const supabaseAdmin = createClient(
@@ -279,6 +280,7 @@ router.patch('/profile', requireAuth, async (req, res) => {
     user_metadata: next,
   });
   if (error) return res.status(500).json({ error: error.message });
+  invalidateUserInfo(req.user.id); // 표시 정보 캐시 즉시 갱신
   res.json({ display_name: next.display_name || null, username: next.username || null, avatar_url: next.avatar_url || null });
 });
 
