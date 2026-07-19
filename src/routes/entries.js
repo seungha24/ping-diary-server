@@ -384,7 +384,7 @@ router.post('/', requireAuth, async (req, res) => {
 
   // 그룹에 공개한 글이면 멤버들에게 푸시 (응답을 막지 않도록 대기하지 않음)
   if (visibility === 'friends') {
-    notifyGroupsNewEntry({ authorId: req.user.id, groupIds: safeSharedGroups, entryTitle: title, entryId: data.id });
+    notifyGroupsNewEntry({ authorId: req.user.id, groupIds: safeSharedGroups, entryTitle: title, entryId: data.id, entryCreatedAt: data.created_at });
   }
 
   // AI 코멘트는 10시간 후 스케줄러가 생성 (scheduler.js COMMENT_DELAY_HOURS)
@@ -549,6 +549,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
       groupIds: data.shared_groups,
       entryTitle: data.title || entry.title,
       entryId: data.id,
+      entryCreatedAt: data.created_at,
     });
   }
   res.json(data);

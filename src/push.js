@@ -9,10 +9,14 @@ const supabaseAdmin = createClient(
 /**
  * 그룹 멤버(작성자 제외)에게 새 글 푸시를 보낸다.
  * 실패해도 throw하지 않는다 — 글 저장 흐름을 막으면 안 되기 때문.
- * @param {{ authorId: string, groupIds: number[]|null, entryTitle?: string, entryId?: number }} p
+ * @param {{ authorId: string, groupIds: number[]|null, entryTitle?: string, entryId?: number, entryCreatedAt?: string }} p
  *   groupIds가 null이면 작성자가 속한 모든 그룹에 공개된 것으로 본다.
  */
-async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle, entryId }) {
+async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle, entryId, entryCreatedAt }) {
+  // 글의 날짜가 한참 과거면(과거 날짜 일기·비공개였다가 공유) '새 글'이 아니라 '공유'로 표현
+  // — 받는 사람이 "옛날 글인데 왜 이제 알림이 오지?"라고 오해하지 않게
+  const isPastEntry =
+    entryCreatedAt && Date.now() - Date.parse(entryCreatedAt) > 6 * 60 * 60 * 1000;
   try {
     let ids = Array.isArray(groupIds) ? groupIds.map(Number).filter(Number.isFinite) : null;
     if (!ids) {
@@ -55,8 +59,8 @@ async function notifyGroupsNewEntry({ authorId, groupIds, entryTitle, entryId })
         messages.push({
           to,
           sound: 'default',
-          title: `${gname}에 새 p!ng이 도착했어요`,
-          body: entryTitle ? `${authorName}님 · ${entryTitle}` : `${authorName}님이 새 일기를 올렸어요`,
+          title: isPastEntry ? `${gname}에 지난 p!ng이 공유됐어요` : `${gname}에 새 p!ng이 도착했어요`,
+          body: entryTitle ? `${authorName}님 · ${entryTitle}` : `${authorName}님이 일기를 공유했어요`,
           // 알림 탭 → 해당 글로 이동 (앱의 알림 응답 리스너가 사용)
           data: { type: 'group_entry', entryId: entryId ?? null, groupId },
         });
