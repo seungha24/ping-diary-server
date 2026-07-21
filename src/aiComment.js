@@ -22,6 +22,8 @@ const COMMON_RULES = `[독해 규칙 — 코멘트를 쓰기 전에 먼저]
 - 너는 요약가가 아니라 '반응하는 인물'이다. 일기 내용을 다시 들려주지(요약·재진술) 마. 일기 속 구체적 사실 언급은 반응의 발판으로 한 번, 짧게면 충분하다.
 - 코멘트의 중심은 그 사실에 대한 페르소나의 생각·감정·말버릇이다. 3~5문장 중 사실 언급은 1문장 이내로, 나머지는 페르소나 자신의 목소리로 채워라. 페르소나의 톤·추임새·시점이 모든 문장에 배어 있어야 하고, 누가 썼는지 지워도 어느 페르소나인지 알아볼 수 있어야 한다.
 - 다음 같은 막연한 표현은 쓰지 마: "넌 충분해", "잘하고 있어", "다 잘될 거야", "오늘도 고생했어", "넌 소중한 사람이야".
+- AI 티 나는 상투구를 금지한다. 특히 이런 투로 시작하거나 끝내지 마라: "오늘 하루의 기록을 잘 읽었어요", "~을 적어낸 것만으로도", "충분히 의미 있는 시간", "~한 당신을 응원해요", "~인 것 같아요"의 반복. 실제 사람이 말하듯 자연스럽게, 리포트·챗봇 말투를 피해라.
+- 존댓말이 기본인 페르소나라도 딱딱한 문어체 대신 사람이 말로 하듯 편하게. 관찰과 감정이 먼저 나오고, 뻔한 격려로 뭉개지 마라. 일기 속 진짜 디테일(구체적 단어·상황) 하나를 붙잡아 반응하면 AI 티가 사라진다.
 - 하루 전체를 훑으려 들지 말고, 페르소나가 가장 물고 늘어질 만한 한 지점만 골라 깊게 반응해.
 - 조언이 필요 없으면 억지로 하지 마. 페르소나의 반응 방식이 우선이다.
 - 사용자를 평가하거나 훈수 두지 마. 반응은 진심이되 과장하지 마.
@@ -237,24 +239,38 @@ function buildUserMessage(content, meta = {}) {
  * @param {{title?: string, tags?: string[], mood?: string, recent?: string}} [meta] 부가 정보(제목·태그·기분·최근기록)
  * @returns {Promise<string>} 생성된 코멘트
  */
-// 생성된 코멘트가 부적절하지 않은지 OpenAI Moderation API로 검사한다.
-// flagged면 true를 돌려주고, 검사 자체가 실패하면(네트워크 등) 서비스를 막지
-// 않기 위해 false(통과)로 처리한다.
-async function isFlagged(text) {
+// 코멘트가 '정말로' 위험한지만 판정한다. 일기 앱에서 실제로 막아야 하는 범주만
+// 차단하고(자해 조장·미성년 성적·심각한 혐오/폭력), 술·병원·화장처럼 일상어에
+// 흔히 오탐이 나는 범주는 통과시킨다. 오탐이 페르소나 코멘트를 통째로 날려
+// 기계적인 기본 문구로 바뀌던 문제를 막기 위함. 검사 실패 시 통과 처리.
+const SERIOUS_CATEGORIES = [
+  'self-harm/instructions',
+  'self-harm/intent',
+  'sexual/minors',
+  'hate/threatening',
+  'harassment/threatening',
+  'violence/graphic',
+];
+async function moderationSerious(text) {
   try {
     const res = await getOpenAI().moderations.create({
       model: 'omni-moderation-latest',
       input: text,
     });
-    return Boolean(res.results?.[0]?.flagged);
+    const r = res.results?.[0];
+    if (!r) return false;
+    const cats = r.categories || {};
+    const scores = r.category_scores || {};
+    // 심각 범주가 true이거나 점수가 확실히 높을(0.5+) 때만 차단
+    return SERIOUS_CATEGORIES.some((c) => cats[c] === true || (scores[c] ?? 0) >= 0.5);
   } catch (e) {
     console.error('[MODERATION] 검사 실패, 통과 처리:', e.message);
     return false;
   }
 }
 
-// Moderation에 걸렸을 때 대신 내보내는 안전한 기본 코멘트
-const SAFE_FALLBACK = '오늘 하루의 기록을 잘 읽었어요. 마음속에 담아둔 이야기를 이렇게 적어낸 것만으로도 충분히 의미 있는 시간이었을 거예요.';
+// 심각 범주로 두 번 연속 걸렸을 때만 쓰는 최후의 기본 코멘트 (거의 나올 일 없음)
+const SAFE_FALLBACK = '오늘의 이야기, 여기 잘 도착했어. 지금은 이렇게 적어둔 것만으로 충분해.';
 
 // 1단계(읽기): 코멘트를 쓰기 전에 일기의 사실 관계를 온도 0으로 정확히 정리한다.
 // 창의적인 페르소나 생성(온도 0.85)이 인물·행동 주체를 헷갈리는 것을 막는 근거 자료.
@@ -291,20 +307,29 @@ async function generateComment(content, persona, meta = {}) {
   const userMessage = buildUserMessage(content, meta) + (facts
     ? `\n\n[사실 관계 정리 — 정확성 확인용 참고 자료. 이 내용을 코멘트에 옮겨 적거나 요약하지 마라. 인물·행동을 언급하게 될 때 틀리지 않기 위해서만 참조하고, (불확실) 표시된 것은 단정하지 마]\n${facts}`
     : '');
-  const completion = await getOpenAI().chat.completions.create({
-    model: 'gpt-4.1-mini',
-    temperature: 0.85,
-    max_tokens: 480,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage },
-    ],
-  });
-  const text = completion.choices[0].message.content.trim();
-  // 생성 결과 안전성 검사: 부적절하면 안전한 기본 코멘트로 대체
-  if (await isFlagged(text)) {
-    console.warn('[MODERATION] 부적절 코멘트 차단 → 기본 코멘트 대체');
-    return SAFE_FALLBACK;
+  async function gen(extraSystem) {
+    const completion = await getOpenAI().chat.completions.create({
+      model: 'gpt-4.1-mini',
+      temperature: 0.85,
+      max_tokens: 480,
+      messages: [
+        { role: 'system', content: extraSystem ? `${systemPrompt}\n\n${extraSystem}` : systemPrompt },
+        { role: 'user', content: userMessage },
+      ],
+    });
+    return completion.choices[0].message.content.trim();
+  }
+
+  let text = await gen();
+  // 심각 범주에 걸렸을 때만: 페르소나는 유지한 채 한 번 다시 생성해보고,
+  // 그래도 걸리면 최후의 기본 코멘트. (일상어 오탐으로 페르소나가 날아가지 않게)
+  if (await moderationSerious(text)) {
+    console.warn('[MODERATION] 심각 범주 감지 → 페르소나 유지하며 재생성');
+    text = await gen('[추가 지시] 앞의 페르소나와 톤은 그대로 유지하되, 위험하거나 부적절하게 읽힐 수 있는 표현은 빼고 담담하게 다시 써라.');
+    if (await moderationSerious(text)) {
+      console.warn('[MODERATION] 재생성도 차단 → 기본 코멘트 대체');
+      return SAFE_FALLBACK;
+    }
   }
   return text;
 }
@@ -340,7 +365,7 @@ async function generateMonthlyReport(monthLabel, entries) {
     ],
   });
   const text = completion.choices[0].message.content.trim();
-  if (await isFlagged(text)) {
+  if (await moderationSerious(text)) {
     console.warn('[MODERATION] 부적절 리포트 차단 → 기본 리포트 대체');
     return SAFE_REPORT_FALLBACK;
   }
@@ -435,7 +460,7 @@ async function generateMonthlyAwards(monthLabel, entries, attempt = 0) {
   const closing = typeof parsed.closing === 'string' ? parsed.closing.slice(0, 200) : '';
   // 안전성 검사 — 걸리면 새 심사위원 조합으로 한 번 자동 재생성 (독한 톤이 오판될 수 있음)
   const text = awards.map((a) => `${a.comment} ${a.quote || ''}`).join('\n') + closing;
-  if (await isFlagged(text)) {
+  if (await moderationSerious(text)) {
     if (attempt < 1) {
       console.warn('[MODERATION] 어워즈 검수 걸림 → 재생성 시도');
       return generateMonthlyAwards(monthLabel, entries, attempt + 1);
