@@ -111,6 +111,20 @@ router.post('/join', requireAuth, async (req, res) => {
     );
   if (joinError) return res.status(500).json({ error: joinError.message });
 
+  // 정원 재확인(삽입 후) — 위 count 체크와 upsert 사이의 경쟁으로 동시 참여자들이
+  // 한도를 넘겨 들어오는 것을 막는다. 초과분이면 방금 넣은 내 행을 되돌리고 거절.
+  if (!alreadyMember) {
+    const { count } = await supabaseAdmin
+      .from('group_members')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('group_id', group.id);
+    if (typeof count === 'number' && count > GROUP_MEMBER_LIMIT) {
+      await supabaseAdmin.from('group_members')
+        .delete().eq('group_id', group.id).eq('user_id', req.user.id);
+      return res.status(403).json({ error: `그룹 정원(${GROUP_MEMBER_LIMIT}명)이 가득 찼어요.` });
+    }
+  }
+
   res.json({ id: group.id, name: group.name });
 });
 
